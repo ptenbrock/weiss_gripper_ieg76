@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import roslib; roslib.load_manifest('weiss_gripper_ieg76_030')
+import roslib;
 import struct
 import time
 import serial
