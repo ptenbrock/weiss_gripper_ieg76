@@ -5,38 +5,38 @@ import rospy
 from std_srvs.srv import Empty
 
 
-def send_querry_request():
-	rospy.wait_for_service('querry_device')
+def send_query_request():
+	rospy.wait_for_service('query')
 	try:
-			querry_device = rospy.ServiceProxy('querry_device', Empty)
-			resp = querry_device()
+			query = rospy.ServiceProxy('query', Empty)
+			resp = query()
 			print "Request executed."
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
 def send_operate_request():
-	rospy.wait_for_service('operate_device')
+	rospy.wait_for_service('operate')
 	try:
-			operate_device = rospy.ServiceProxy('operate_device', Empty)
-			resp = operate_device()
+			operate = rospy.ServiceProxy('operate', Empty)
+			resp = operate()
 			print "Request executed."
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
 def send_activate_request():
-	rospy.wait_for_service('activate_device')
+	rospy.wait_for_service('activate')
 	try:
-			activate_device = rospy.ServiceProxy('activate_device', Empty)
-			resp = activate_device()
+			activate = rospy.ServiceProxy('activate', Empty)
+			resp = activate()
 			print "Request executed."
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
 def send_reference_request():
-	rospy.wait_for_service('reference_device')
+	rospy.wait_for_service('reference')
 	try:
-			reference_device = rospy.ServiceProxy('reference_device', Empty)
-			resp = reference_device()
+			reference = rospy.ServiceProxy('reference', Empty)
+			resp = reference()
 			print "Request executed."
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
@@ -61,12 +61,12 @@ def send_open_request():
 
 def usage():
 	print "-------- Commands Weiss Robotics Gripper ieg76 --------"
-	print "1. Querry"
+	print "1. Query"
 	print "2. Operate"
 	print "3. Activate"
 	print "4. Reference"
-	print "5. Open"
-	print "6. Close"
+	print "5. Open jaws"
+	print "6. Close jaws"
 	print "0. Exit"
 
 if __name__ == "__main__":
@@ -76,8 +76,8 @@ if __name__ == "__main__":
 		if selected_cmd == 0:
 			sys.exit(0)
 		elif selected_cmd == 1:
-			print "Sending querry request..."
-			send_querry_request()
+			print "Sending query request..."
+			send_query_request()
 		elif selected_cmd == 2:
 			print "Sending operate request..."
 			send_operate_request()
@@ -88,10 +88,10 @@ if __name__ == "__main__":
 			print "Sending reference request..."
 			send_reference_request()
 		elif selected_cmd == 5:
-			print "Sending open request..."
+			print "Sending open jaws request..."
 			send_open_request()
 		elif selected_cmd == 6: 
-			print "Sending close request..."
+			print "Sending close jaws request..."
 			send_close_request()
 		else:
 			print "Unknown option entered."
