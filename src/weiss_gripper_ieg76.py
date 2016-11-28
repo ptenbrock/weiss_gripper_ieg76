@@ -7,7 +7,8 @@ import rospy
 from std_srvs.srv import Empty
 from std_srvs.srv import EmptyResponse
 
-ser = serial.Serial('/dev/ttyACM0')  #open serial
+#ser = serial.Serial('/dev/ttyACM0')  #open serial
+ser = serial.Serial()
 
 def handle_query(req):
 	print("Query:")
@@ -47,6 +48,13 @@ def handle_open_jaws(req):
 
 def weiss_gripper_ieg76():
 	rospy.init_node('weiss_gripper_ieg76_node')
+	serial_port_addr = rospy.get_param("~serial_port_address", '/dev/ttyACM0')
+	ser.port = serial_port_addr
+	try: 
+		ser.open()
+	except Exception, e:
+		print "error opening serial port " + serial_port_addr + ": " + str(e)
+		exit(1)
 	serv_query = rospy.Service('query', Empty, handle_query)
 	serv_operate = rospy.Service('operate', Empty, handle_operate)
 	serv_activate = rospy.Service('activate', Empty, handle_activate)
