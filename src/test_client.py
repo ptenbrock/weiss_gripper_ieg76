@@ -59,6 +59,15 @@ def send_open_request():
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
+def send_close_port_request():
+	rospy.wait_for_service('close_port')
+	try:
+			close_port = rospy.ServiceProxy('close_port', Empty)
+			resp = close_port()
+			print "Request executed."
+	except rospy.ServiceException, e:
+			print "Service call failed: %s"%e
+
 def usage():
 	print "-------- Commands Weiss Robotics Gripper ieg76 --------"
 	print "1. Query"
@@ -67,14 +76,15 @@ def usage():
 	print "4. Reference"
 	print "5. Open jaws"
 	print "6. Close jaws"
-	print "0. Exit"
+	print "7. Close serial port"
+	print "9. Exit"
 
 if __name__ == "__main__":
 	selected_cmd = usage()
 	while True:
 		selected_cmd = input("Select a command to send: ")
-		if selected_cmd == 0:
-			sys.exit(0)
+		if selected_cmd == 9:
+			sys.exit(9)
 		elif selected_cmd == 1:
 			print "Sending query request..."
 			send_query_request()
@@ -93,5 +103,8 @@ if __name__ == "__main__":
 		elif selected_cmd == 6: 
 			print "Sending close jaws request..."
 			send_close_request()
+		elif selected_cmd == 7: 
+			print "Sending close serial port request..."
+			send_close_port_request()
 		else:
 			print "Unknown option entered."
