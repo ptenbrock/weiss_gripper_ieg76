@@ -65,6 +65,7 @@ class serial_port_reader(threading.Thread):
 		if OLD_OPEN_FLAG == 0 and OPEN_FLAG == 1:
 			#the transition from jaws not opened to jaws opened has occured. Signal this event.
 			jaws_opened_event.set()
+			print "Open event triggered"
 
 		byte3_binary = byte3_binary >> 1
 		OLD_CLOSED_FLAG = CLOSED_FLAG
@@ -72,6 +73,7 @@ class serial_port_reader(threading.Thread):
 		if OLD_CLOSED_FLAG == 0 and CLOSED_FLAG == 1:
 			#the transition from jaws not closed to jaws closed has occured. Signal this event.
 			jaws_closed_event.set()
+			print "Close event triggered"
 
 		byte3_binary = byte3_binary >> 1
 		OLD_HOLDING_FLAG = HOLDING_FLAG
@@ -79,6 +81,7 @@ class serial_port_reader(threading.Thread):
 		if OLD_HOLDING_FLAG == 0 and HOLDING_FLAG == 1:
 			#the transition from not holding/grasping an object to holding/grasping an object has occured. Signal this event.
 			object_grasped_event.set()
+			print "Grasp event triggered"
 
 		byte3_binary = byte3_binary >> 1
 		FAULT_FLAG = byte3_binary & mask
@@ -120,6 +123,7 @@ class serial_port_reader(threading.Thread):
 						#print("incoming_bytes_no = " + str(incoming_bytes_no) + ": " + data_str)
 			except Exception as e:
 				print "error reading from the serial port: " + str(e)
+				
 			finally:
 				serial_port_lock.release()
 
@@ -217,7 +221,7 @@ class weiss_gripper_ieg76(object):
 		serv_close_port = rospy.Service('close_port', Trigger, self.handle_close_port)
 
 		self.serial_port_reader_thread = serial_port_reader(self.ser)
-		self.states_publisher_thread = states_publisher(0.08)
+		self.states_publisher_thread = states_publisher(0.8)
 
 		self.initialize_gripper()
 
@@ -252,6 +256,7 @@ class weiss_gripper_ieg76(object):
 	def handle_open_jaws(self, req):
 		global OPEN_FLAG
 		global CLOSED_FLAG
+		jaws_opened_event.clear()
 		print("Sending PDOUT=[02,00] to open the jaws...")
 		payload = struct.pack('>BBBBBBBBBBBBBB', 0x50, 0x44, 0x4f, 0x55, 0x54, 0x3d, 0x5b, 0x30, 0x32, 0x2c, 0x30, 0x30, 0x5d, 0x0a)
 		res = TriggerResponse()
@@ -266,21 +271,19 @@ class weiss_gripper_ieg76(object):
 			print "Error writing to the serial port: " + str(e)	
 		finally:
 			serial_port_lock.release()	
+
+		#the method wait [...] will always return True except if a timeout is given and the operation times out.
+		open_jaws_timed_out = not(jaws_opened_event.wait(timeout=3.0))
+		print("open_jaws_timed_out = " + str(open_jaws_timed_out))
 		
-		if OPEN_FLAG == 0:
-			open_jaws_timed_out = not(jaws_opened_event.wait(timeout=3.0))
-			if open_jaws_timed_out:
-				print "Timed out while trying to open the jaws."
-				res.success = False
-				res.message = "Timed out while trying to open the jaws."
-			else:
-				print "Opened the jaws."
-				res.success = True
-				res.message = "Jaws opened."
+		if open_jaws_timed_out == True:
+			print "Timed out while trying to open the jaws."
+			res.success = False
+			res.message = "Timed out while trying to open the jaws."
 		else:
-			print "The jaws are already opened."
+			print "Opened the jaws."
 			res.success = True
-			res.message = "The jaws are already opened."
+			res.message = "Jaws opened."
 
 		print "DEBUG: OPEN_FLAG = " + str(OPEN_FLAG)
 		print "DEBUG: CLOSED_FLAG = " + str(CLOSED_FLAG)	
@@ -292,6 +295,7 @@ class weiss_gripper_ieg76(object):
 		global CLOSED_FLAG
 		global HOLDING_FLAG
 		global FAULT_FLAG
+		jaws_closed_event.clear()
 		print "Sending PDOUT=[03,00] to completly close the jaws..."
 		payload = struct.pack('>BBBBBBBBBBBBBB', 0x50, 0x44, 0x4f, 0x55, 0x54, 0x3d, 0x5b, 0x30, 0x33, 0x2c, 0x30, 0x30, 0x5d, 0x0a)
 		res = TriggerResponse()
@@ -307,25 +311,24 @@ class weiss_gripper_ieg76(object):
 		except SerialException as e:
 			print "Error writing to the serial port: " + str(e)	
 		finally:
-			serial_port_lock.release()	
+			serial_port_lock.release()
+
+		#the method wait [...] will always return True except if a timeout is given and the operation times out.
+		close_jaws_timed_out = not(jaws_closed_event.wait(timeout=3.0))
+		print("close_jaws_timed_out = " + str(close_jaws_timed_out))
 		
-		if CLOSED_FLAG == 0:
-			close_jaws_timed_out = not(jaws_closed_event.wait(timeout=3.0))
-			if close_jaws_timed_out:
-				print "Timed out while trying to completly close the jaws."
-				res.success = False
-				res.message = "Timed out while trying to completly close the jaws."
-				if HOLDING_FLAG == 1:
-					print "Remove the object which is blocking the claws from completly closing and try again."
-					res.message = res.message + " Remove the object which is blocking the claws from completly closing and try again."
-			else:
-				print "Completly closed the jaws."
-				res.success = True
-				res.message = "Jaws completly closed."
+		if close_jaws_timed_out == True:
+			print "Timed out while trying to completly close the jaws."
+			res.success = False
+			res.message = "Timed out while trying to completly close the jaws."
+			if HOLDING_FLAG == 1:
+				print "Remove the object which is blocking the claws from completly closing and try again."
+				res.message = res.message + " Remove the object which is blocking the claws from completly closing and try again."
 		else:
-			print "The jaws are already completly closed."
+			print "Completly closed the jaws."
 			res.success = True
-			res.message = "The jaws are already completly closed."
+			res.message = "Jaws completly closed."
+		
 		
 		print "DEBUG: OPEN_FLAG = " + str(OPEN_FLAG)
 		print "DEBUG: CLOSED_FLAG = " + str(CLOSED_FLAG)
@@ -339,6 +342,7 @@ class weiss_gripper_ieg76(object):
 		global CLOSED_FLAG
 		global HOLDING_FLAG
 		global FAULT_FLAG
+		object_grasped_event.clear()
 		print "Sending PDOUT=[03,00] to grasp an object..."
 		payload = struct.pack('>BBBBBBBBBBBBBB', 0x50, 0x44, 0x4f, 0x55, 0x54, 0x3d, 0x5b, 0x30, 0x33, 0x2c, 0x30, 0x30, 0x5d, 0x0a)
 		res = TriggerResponse()
@@ -356,23 +360,21 @@ class weiss_gripper_ieg76(object):
 		finally:
 			serial_port_lock.release()	
 		
-		if HOLDING_FLAG == 0:
-			grasp_object_timed_out = not(object_grasped_event.wait(timeout=3.0))
-			if grasp_object_timed_out:
-				print "Timed out while trying to grasp an object."
-				res.success = False
-				res.message = "Timed out while trying to grasp an object."
-				if CLOSED_FLAG == 1:
-					print "No object to grasp."
-					res.message = res.message + " No object to grasp."
-			else:
-				print "Grasped an object."
-				res.success = True
-				res.message = "Grasped an object."
+		#the method wait [...] will always return True except if a timeout is given and the operation times out.
+		grasp_object_timed_out = not(object_grasped_event.wait(timeout=3.0))
+		print("grasp_object_timed_out = " + str(grasp_object_timed_out))
+
+		if grasp_object_timed_out == True:
+			print "Timed out while trying to grasp an object."
+			res.success = False
+			res.message = "Timed out while trying to grasp an object."
+			if CLOSED_FLAG == 1:
+				print "No object to grasp."
+				res.message = res.message + " No object to grasp."
 		else:
-			print "The jaws are already holding an object."
+			print "Grasped an object."
 			res.success = True
-			res.message = "The jaws are already holding an object."
+			res.message = "Grasped an object."
 		
 		print "DEBUG: OPEN_FLAG = " + str(OPEN_FLAG)
 		print "DEBUG: CLOSED_FLAG = " + str(CLOSED_FLAG)

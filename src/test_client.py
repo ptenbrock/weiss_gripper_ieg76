@@ -18,7 +18,10 @@ def send_close_request():
 	try:
 			close_jaws = rospy.ServiceProxy('close_jaws', Trigger)
 			resp = close_jaws()
-			print "Request executed."
+			if resp.success == True:
+				print "Success: " + resp.message
+			else:
+				print "Failure: " + resp.message
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
@@ -27,7 +30,10 @@ def send_grasp_object_request():
 	try:
 			grasp_object = rospy.ServiceProxy('grasp_object', Trigger)
 			resp = grasp_object()
-			print "Request executed."
+			if resp.success == True:
+				print "Success: " + resp.message
+			else:
+				print "Failure: " + resp.message
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
@@ -36,7 +42,10 @@ def send_open_request():
 	try:
 			open_jaws = rospy.ServiceProxy('open_jaws', Trigger)
 			resp = open_jaws()
-			print "Request executed."
+			if resp.success == True:
+				print "Success: " + resp.message
+			else:
+				print "Failure: " + resp.message
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
@@ -45,10 +54,10 @@ def send_close_port_request():
 	try:
 			close_port = rospy.ServiceProxy('close_port', Trigger)
 			resp = close_port()
-			if resp.success:
-				print resp.message
+			if resp.success == True:
+				print "Success: " + resp.message
 			else:
-				print resp.message
+				print "Failure: " + resp.message
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
