@@ -12,6 +12,7 @@ from std_srvs.srv import Empty, EmptyResponse, Trigger, TriggerResponse
 from sensor_msgs.msg import JointState
 from diagnostic_msgs.msg import DiagnosticStatus 
 
+ser = serial.Serial()
 serial_port_lock = threading.Lock()
 status_flags_cond_var = threading.Condition()
 jaws_closed_event = threading.Event()
@@ -32,9 +33,8 @@ TEMPWARN_FLAG = 0b0
 MAINT_FLAG = 0b0
 
 class serial_port_reader(threading.Thread):
-	def __init__(self, serial_port):
+	def __init__(self):
 		threading.Thread.__init__(self)
-		self.serial_port = serial_port
 
 	def extract_info(self, read_data_hexstr):
 		status_flags_cond_var.acquire()
@@ -108,22 +108,63 @@ class serial_port_reader(threading.Thread):
 		status_flags_cond_var.notifyAll()
 		status_flags_cond_var.release()
 
+	def reconnect_serial_port(self):
+		global ser
+		serial_port_addr = ser.port
+		ser.close()
+		ser = None
+		time.sleep(2)
+		ser = serial.Serial()
+		ser.port = serial_port_addr
+		ser.timeout = 0
+		is_serial_port_opened = False
+		while not is_serial_port_opened:
+			try: 
+				ser.open()
+				is_serial_port_opened = True
+			except Exception as e:
+				is_serial_port_opened = False
+				print "\terror opening serial port " + serial_port_addr + ": " + str(e)
+				print "Retrying to open the serial port " + serial_port_addr + "..."
+				time.sleep(1)
+		print "Serial port opened: " + str(ser.isOpen())
+
+		print("Query...")
+		payload = struct.pack(">BBBB", 0x49, 0x44, 0x3f, 0x0a)
+		try:
+			ser.write(payload)
+			time.sleep(0.5)
+			print("PDOUT=[03,00] activate...")
+			payload = struct.pack('>BBBBBBBBBBBBBB', 0x50, 0x44, 0x4f, 0x55, 0x54, 0x3d, 0x5b, 0x30, 0x33, 0x2c, 0x30, 0x30, 0x5d, 0x0a)
+			ser.write(payload)
+			time.sleep(0.5)
+			print("Operate...")
+			payload = struct.pack(">BBBBBBBBBB", 0x4f, 0x50, 0x45, 0x52, 0x41, 0x54, 0x45, 0x28, 0x29, 0x0a)
+			ser.write(payload)
+			time.sleep(0.5)
+		except Exception as e:
+			print "error reading from the serial port: " + str(e)
+
 	def run(self):
 		#read from port
+		connection_errors_no = 0
 		while True:
 			serial_port_lock.acquire()
 			try:
-				if self.serial_port.isOpen():
-					incoming_bytes_no = self.serial_port.inWaiting()
+				if ser.isOpen():
+					incoming_bytes_no = ser.inWaiting()
 					if (incoming_bytes_no>0): #if incoming bytes are waiting to be read from the serial input buffer
-						input_data = self.serial_port.read(self.serial_port.inWaiting())
+						input_data = ser.read(ser.inWaiting())
 						data_str = input_data.decode('ascii') #read the bytes and convert from binary array to ASCII
 						if incoming_bytes_no == 22:
 							self.extract_info(data_str)
 						#print("incoming_bytes_no = " + str(incoming_bytes_no) + ": " + data_str)
 			except Exception as e:
 				print "error reading from the serial port: " + str(e)
-				
+				connection_errors_no += 1
+				if(connection_errors_no > 5):
+					connection_errors_no = 0 #reset the counter
+					self.reconnect_serial_port()
 			finally:
 				serial_port_lock.release()
 
@@ -186,25 +227,24 @@ class states_publisher(threading.Thread):
 		self.joint_state_msg.position = []
 		self.joint_state_msg.position.append(POS)
 		try:
-			#self.joint_states_publisher.publish(self.joint_state_msg)
 			self.pub_freq_time_diag.publish(self.joint_state_msg)
 		except:
 			print "\nClosed topics."
 
 class weiss_gripper_ieg76(object):
 	def __init__(self):
+		global ser
 		jaws_closed_event.clear()
 		jaws_opened_event.clear()
 		object_grasped_event.clear()
 		rospy.init_node('weiss_gripper_ieg76_node')
 		serial_port_addr = rospy.get_param("~serial_port_address", '/dev/ttyACM0')
-		self.ser = serial.Serial()
-		self.ser.port = serial_port_addr
-		self.ser.timeout = 0
+		ser.port = serial_port_addr
+		ser.timeout = 0
 		is_serial_port_opened = False
 		while not is_serial_port_opened:
 			try: 
-				self.ser.open()
+				ser.open()
 				is_serial_port_opened = True
 			except Exception as e:
 				is_serial_port_opened = False
@@ -212,7 +252,7 @@ class weiss_gripper_ieg76(object):
 				print "Retrying to open the serial port " + serial_port_addr + "..."
 				time.sleep(1)
 		
-		print "Serial port opened: " + str(self.ser.isOpen())
+		print "Serial port opened: " + str(ser.isOpen())
 
 		serv_ref = rospy.Service('reference', Empty, self.handle_reference)
 		serv_open = rospy.Service('open_jaws', Trigger, self.handle_open_jaws)
@@ -220,7 +260,7 @@ class weiss_gripper_ieg76(object):
 		serv_grasp = rospy.Service('grasp_object', Trigger, self.handle_grasp_object)
 		serv_close_port = rospy.Service('close_port', Trigger, self.handle_close_port)
 
-		self.serial_port_reader_thread = serial_port_reader(self.ser)
+		self.serial_port_reader_thread = serial_port_reader()
 		self.states_publisher_thread = states_publisher(0.8)
 
 		self.initialize_gripper()
@@ -232,15 +272,15 @@ class weiss_gripper_ieg76(object):
 		payload = struct.pack(">BBBB", 0x49, 0x44, 0x3f, 0x0a)
 		serial_port_lock.acquire()
 		try:
-			self.ser.write(payload)
+			ser.write(payload)
 			time.sleep(0.5)
 			print("PDOUT=[03,00] activate...")
 			payload = struct.pack('>BBBBBBBBBBBBBB', 0x50, 0x44, 0x4f, 0x55, 0x54, 0x3d, 0x5b, 0x30, 0x33, 0x2c, 0x30, 0x30, 0x5d, 0x0a)
-			self.ser.write(payload)
+			ser.write(payload)
 			time.sleep(0.5)
 			print("Operate...")
 			payload = struct.pack(">BBBBBBBBBB", 0x4f, 0x50, 0x45, 0x52, 0x41, 0x54, 0x45, 0x28, 0x29, 0x0a)
-			self.ser.write(payload)
+			ser.write(payload)
 			time.sleep(0.5)
 		except Exception as e:
 			print "error reading from the serial port: " + str(e)
@@ -250,7 +290,7 @@ class weiss_gripper_ieg76(object):
 	def handle_reference(self, req):
 		print("PDOUT=[07,00] reference:")
 		payload = struct.pack('>BBBBBBBBBBBBBB', 0x50, 0x44, 0x4f, 0x55, 0x54, 0x3d, 0x5b, 0x30, 0x37, 0x2c, 0x30, 0x30, 0x5d, 0x0a)
-		self.ser.write(payload)
+		ser.write(payload)
 		return EmptyResponse()
 
 	def handle_open_jaws(self, req):
@@ -266,7 +306,7 @@ class weiss_gripper_ieg76(object):
 
 		try:
 			serial_port_lock.acquire()
-			self.ser.write(payload)
+			ser.write(payload)
 		except SerialException as e:
 			print "Error writing to the serial port: " + str(e)	
 		finally:
@@ -307,7 +347,7 @@ class weiss_gripper_ieg76(object):
 
 		try:
 			serial_port_lock.acquire()
-			self.ser.write(payload)
+			ser.write(payload)
 		except SerialException as e:
 			print "Error writing to the serial port: " + str(e)	
 		finally:
@@ -354,7 +394,7 @@ class weiss_gripper_ieg76(object):
 
 		try:
 			serial_port_lock.acquire()
-			self.ser.write(payload)
+			ser.write(payload)
 		except SerialException as e:
 			print "Error writing to the serial port: " + str(e)	
 		finally:
@@ -384,19 +424,19 @@ class weiss_gripper_ieg76(object):
 		return res
 
 	def handle_close_port(self, req):
-		print "Closing the serial port " + self.ser.port + "..."
+		print "Closing the serial port " + ser.port + "..."
 		res = TriggerResponse()
 		serial_port_lock.acquire()
 		try: 
-			if self.ser.isOpen():
-				self.ser.close()
+			if ser.isOpen():
+				ser.close()
 				res.success = True
-				res.message = "Closed the serial port " + self.ser.port
-				print "Closed the serial port " + self.ser.port
+				res.message = "Closed the serial port " + ser.port
+				print "Closed the serial port " + ser.port
 		except SerialException as e:
 			print "Error closing the serial port: " + str(e)
 			res.success = False
-			res.message = "Error closing the serial port " + self.ser.port + ": " + str(e)
+			res.message = "Error closing the serial port " + ser.port + ": " + str(e)
 		finally:
 			serial_port_lock.release()
 		return res
