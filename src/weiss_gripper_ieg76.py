@@ -6,8 +6,11 @@ import serial
 import rospy
 import threading
 import binascii
+import diagnostic_updater
 from serial import SerialException
 from std_srvs.srv import Empty, EmptyResponse, Trigger, TriggerResponse
+from sensor_msgs.msg import JointState
+from diagnostic_msgs.msg import DiagnosticStatus 
 
 serial_port_lock = threading.Lock()
 status_flags_cond_var = threading.Condition()
@@ -15,6 +18,7 @@ jaws_closed_event = threading.Event()
 jaws_opened_event = threading.Event()
 object_grasped_event = threading.Event()
 
+POS = 0.0
 OPEN_FLAG = 0b0
 OLD_OPEN_FLAG = 0b0
 CLOSED_FLAG = 0b0
@@ -22,6 +26,10 @@ OLD_CLOSED_FLAG = 0b0
 HOLDING_FLAG = 0b0
 OLD_HOLDING_FLAG = 0b0
 FAULT_FLAG = 0b0
+IDLE_FLAG = 0b0
+TEMPFAULT_FLAG = 0b0
+TEMPWARN_FLAG = 0b0
+MAINT_FLAG = 0b0
 
 class serial_port_reader(threading.Thread):
 	def __init__(self, serial_port):
@@ -30,6 +38,7 @@ class serial_port_reader(threading.Thread):
 
 	def extract_info(self, read_data_hexstr):
 		status_flags_cond_var.acquire()
+		global POS
 		global OPEN_FLAG 
 		global OLD_OPEN_FLAG
 		global CLOSED_FLAG 
@@ -37,9 +46,13 @@ class serial_port_reader(threading.Thread):
 		global HOLDING_FLAG
 		global OLD_HOLDING_FLAG 
 		global FAULT_FLAG
+		global IDLE_FLAG
+		global TEMPFAULT_FLAG
+		global TEMPWARN_FLAG
+		global MAINT_FLAG
 		#the data read from the serial port is @PDIN=[BYTE0,BYTE1,BYTE2,BYTE3] (see pag.20 in user manual)
 		position_hexstr = read_data_hexstr[7:9] + read_data_hexstr[10:12] #remove the comma "," bewteen "BYTE0" and "BYTE1"
-		POS = int(position_hexstr, 16)
+		POS = int(position_hexstr, 16) / float(100) #position in mm
 
 		byte3_hexstr = read_data_hexstr[16:18]
 		byte3_binary = int(byte3_hexstr, 16)
@@ -110,6 +123,70 @@ class serial_port_reader(threading.Thread):
 			finally:
 				serial_port_lock.release()
 
+
+class states_publisher(threading.Thread):
+	def __init__(self, loop_time):
+		threading.Thread.__init__(self)
+		self.loop_time = loop_time
+		self.joint_state_msg = JointState()
+		self.joint_state_msg.name = []
+		self.joint_state_msg.name.append("gripper_claws")
+		self.joint_states_publisher = rospy.Publisher('joint_states', JointState, queue_size=10)
+		#self.diagnostics_publisher = rospy.Publisher('diagnostics', DiagnosticStatus, queue_size=10)
+		self.updater = diagnostic_updater.Updater()
+		self.updater.setHardwareID("Weiss Robotics Gripper IEG 76-030 V1.02 SN 000106")
+		self.updater.add("Position and flags updater", self.produce_diagnostics)
+		freq_bounds = {'min':0.5, 'max':2}
+		# It publishes the messages and simultaneously makes diagnostics for the topic "joint_states" using a FrequencyStatus and TimeStampStatus
+		self.pub_freq_time_diag = diagnostic_updater.DiagnosedPublisher(self.joint_states_publisher, self.updater, diagnostic_updater.FrequencyStatusParam(freq_bounds, 0.1, 10), diagnostic_updater.TimeStampStatusParam())
+
+	def run(self):
+		while True:
+			status_flags_cond_var.acquire()
+			status_flags_cond_var.wait()
+			self.updater.update()
+			self.publish_states()
+			#self.updater.force_update()
+			status_flags_cond_var.release()
+			rospy.sleep(self.loop_time)
+		print "states_publisher_thread done."
+
+	def produce_diagnostics(self, stat):
+		global POS
+		global IDLE_FLAG
+		global OPEN_FLAG
+		global CLOSED_FLAG
+		global HOLDING_FLAG
+		global FAULT_FLAG
+		global TEMPFAULT_FLAG
+		global TEMPWARN_FLAG
+		global MAINT_FLAG
+		if FAULT_FLAG == True:
+			stat.summary(DiagnosticStatus.ERROR, "The fault bit of the gripper is 1.")
+		else:
+			stat.summary(DiagnosticStatus.OK, "The fault bit of the gripper is 0.")
+		stat.add("Position", POS)
+		stat.add("Idle Flag", IDLE_FLAG)
+		stat.add("Open Flag", OPEN_FLAG)
+		stat.add("Closed Flag", CLOSED_FLAG)
+		stat.add("Holding Flag", HOLDING_FLAG)
+		stat.add("Error Flag", FAULT_FLAG)
+		stat.add("Temperature Error Flag", TEMPFAULT_FLAG)
+		stat.add("Temperature Warning Flag", TEMPWARN_FLAG)
+		stat.add("Maintenance Flag", MAINT_FLAG)
+		return stat
+
+	def publish_states(self):
+		global POS
+		self.joint_state_msg.header.stamp = rospy.Time.now()
+		self.joint_state_msg.position = []
+		self.joint_state_msg.position.append(POS)
+		try:
+			#self.joint_states_publisher.publish(self.joint_state_msg)
+			self.pub_freq_time_diag.publish(self.joint_state_msg)
+		except:
+			print "\nClosed topics."
+
 class weiss_gripper_ieg76(object):
 	def __init__(self):
 		jaws_closed_event.clear()
@@ -140,6 +217,7 @@ class weiss_gripper_ieg76(object):
 		serv_close_port = rospy.Service('close_port', Trigger, self.handle_close_port)
 
 		self.serial_port_reader_thread = serial_port_reader(self.ser)
+		self.states_publisher_thread = states_publisher(0.08)
 
 		self.initialize_gripper()
 
@@ -178,8 +256,8 @@ class weiss_gripper_ieg76(object):
 		payload = struct.pack('>BBBBBBBBBBBBBB', 0x50, 0x44, 0x4f, 0x55, 0x54, 0x3d, 0x5b, 0x30, 0x32, 0x2c, 0x30, 0x30, 0x5d, 0x0a)
 		res = TriggerResponse()
 
-		print "OPEN_FLAG = " + str(OPEN_FLAG)
-		print "CLOSED_FLAG = " + str(CLOSED_FLAG)
+		print "DEBUG: OPEN_FLAG = " + str(OPEN_FLAG)
+		print "DEBUG: CLOSED_FLAG = " + str(CLOSED_FLAG)
 
 		try:
 			serial_port_lock.acquire()
@@ -204,8 +282,8 @@ class weiss_gripper_ieg76(object):
 			res.success = True
 			res.message = "The jaws are already opened."
 
-		print "OPEN_FLAG = " + str(OPEN_FLAG)
-		print "CLOSED_FLAG = " + str(CLOSED_FLAG)	
+		print "DEBUG: OPEN_FLAG = " + str(OPEN_FLAG)
+		print "DEBUG: CLOSED_FLAG = " + str(CLOSED_FLAG)	
 
 		return res
 
@@ -218,10 +296,10 @@ class weiss_gripper_ieg76(object):
 		payload = struct.pack('>BBBBBBBBBBBBBB', 0x50, 0x44, 0x4f, 0x55, 0x54, 0x3d, 0x5b, 0x30, 0x33, 0x2c, 0x30, 0x30, 0x5d, 0x0a)
 		res = TriggerResponse()
 
-		print "OPEN_FLAG = " + str(OPEN_FLAG)
-		print "CLOSED_FLAG = " + str(CLOSED_FLAG)
-		print "HOLDING_FLAG = " + str(HOLDING_FLAG)
-		print "FAULT_FLAG = " + str(FAULT_FLAG)
+		print "DEBUG: OPEN_FLAG = " + str(OPEN_FLAG)
+		print "DEBUG: CLOSED_FLAG = " + str(CLOSED_FLAG)
+		print "DEBUG: HOLDING_FLAG = " + str(HOLDING_FLAG)
+		print "DEBUG: FAULT_FLAG = " + str(FAULT_FLAG)
 
 		try:
 			serial_port_lock.acquire()
@@ -249,10 +327,10 @@ class weiss_gripper_ieg76(object):
 			res.success = True
 			res.message = "The jaws are already completly closed."
 		
-		print "OPEN_FLAG = " + str(OPEN_FLAG)
-		print "CLOSED_FLAG = " + str(CLOSED_FLAG)
-		print "HOLDING_FLAG = " + str(HOLDING_FLAG)
-		print "FAULT_FLAG = " + str(FAULT_FLAG)
+		print "DEBUG: OPEN_FLAG = " + str(OPEN_FLAG)
+		print "DEBUG: CLOSED_FLAG = " + str(CLOSED_FLAG)
+		print "DEBUG: HOLDING_FLAG = " + str(HOLDING_FLAG)
+		print "DEBUG: FAULT_FLAG = " + str(FAULT_FLAG)
 
 		return res
 
@@ -265,10 +343,10 @@ class weiss_gripper_ieg76(object):
 		payload = struct.pack('>BBBBBBBBBBBBBB', 0x50, 0x44, 0x4f, 0x55, 0x54, 0x3d, 0x5b, 0x30, 0x33, 0x2c, 0x30, 0x30, 0x5d, 0x0a)
 		res = TriggerResponse()
 
-		print "OPEN_FLAG = " + str(OPEN_FLAG)
-		print "CLOSED_FLAG = " + str(CLOSED_FLAG)
-		print "HOLDING_FLAG = " + str(HOLDING_FLAG)
-		print "FAULT_FLAG = " + str(FAULT_FLAG)
+		print "DEBUG: OPEN_FLAG = " + str(OPEN_FLAG)
+		print "DEBUG: CLOSED_FLAG = " + str(CLOSED_FLAG)
+		print "DEBUG: HOLDING_FLAG = " + str(HOLDING_FLAG)
+		print "DEBUG: FAULT_FLAG = " + str(FAULT_FLAG)
 
 		try:
 			serial_port_lock.acquire()
@@ -296,10 +374,10 @@ class weiss_gripper_ieg76(object):
 			res.success = True
 			res.message = "The jaws are already holding an object."
 		
-		print "OPEN_FLAG = " + str(OPEN_FLAG)
-		print "CLOSED_FLAG = " + str(CLOSED_FLAG)
-		print "HOLDING_FLAG = " + str(HOLDING_FLAG)
-		print "FAULT_FLAG = " + str(FAULT_FLAG)
+		print "DEBUG: OPEN_FLAG = " + str(OPEN_FLAG)
+		print "DEBUG: CLOSED_FLAG = " + str(CLOSED_FLAG)
+		print "DEBUG: HOLDING_FLAG = " + str(HOLDING_FLAG)
+		print "DEBUG: FAULT_FLAG = " + str(FAULT_FLAG)
 
 		return res
 
@@ -323,7 +401,11 @@ class weiss_gripper_ieg76(object):
 
 	def run(self):
 		self.serial_port_reader_thread.daemon = True
+		self.states_publisher_thread.daemon = True
+
+		print "Starting threads..."
 		self.serial_port_reader_thread.start()
+		self.states_publisher_thread.start()
 		
 		rospy.spin()
 
