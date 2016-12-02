@@ -7,9 +7,12 @@ from std_srvs.srv import Trigger, Empty
 def send_reference_request():
 	rospy.wait_for_service('reference')
 	try:
-			reference = rospy.ServiceProxy('reference', Empty)
+			reference = rospy.ServiceProxy('reference', Trigger)
 			resp = reference()
-			print "Request executed."
+			if resp.success == True:
+				print "Success: " + resp.message
+			else:
+				print "Failure: " + resp.message
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
@@ -49,11 +52,11 @@ def send_open_request():
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
-def send_close_port_request():
-	rospy.wait_for_service('close_port')
+def send_ack_error_request():
+	rospy.wait_for_service('ack_error')
 	try:
-			close_port = rospy.ServiceProxy('close_port', Trigger)
-			resp = close_port()
+			ack_error = rospy.ServiceProxy('ack_error', Trigger)
+			resp = ack_error()
 			if resp.success == True:
 				print "Success: " + resp.message
 			else:
@@ -61,22 +64,34 @@ def send_close_port_request():
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
+def send_ack_ref_error_request():
+	rospy.wait_for_service('ack_ref_error')
+	try:
+			ack_ref_error = rospy.ServiceProxy('ack_ref_error', Trigger)
+			resp = ack_ref_error()
+			if resp.success == True:
+				print "Success: " + resp.message
+			else:
+				print "Failure: " + resp.message
+	except rospy.ServiceException, e:
+			print "Service call failed: %s"%e
+
+
 def usage():
 	print "-------- Commands Weiss Robotics Gripper ieg76 --------"
 	print "1. Reference"
 	print "2. Open jaws"
 	print "3. Close jaws"
 	print "4. Grasp object"
-	print "5. Close serial port"
-	print "9. Exit"
+	print "5. Ack error"
+	print "6. Ack reference error"
+	print "7. Exit"
 
 if __name__ == "__main__":
 	selected_cmd = usage()
 	while True:
 		selected_cmd = input("Select a command to send: ")
-		if selected_cmd == 9:
-			sys.exit(9)
-		elif selected_cmd == 1:
+		if selected_cmd == 1:
 			print "Sending reference request..."
 			send_reference_request()
 		elif selected_cmd == 2:
@@ -89,7 +104,12 @@ if __name__ == "__main__":
 			print "Sending grasp object request..."
 			send_grasp_object_request()
 		elif selected_cmd == 5: 
-			print "Sending close serial port request..."
-			send_close_port_request()
+			print "Sending acknowledge error request..."
+			send_ack_error_request()
+		elif selected_cmd == 6: 
+			print "Sending acknowledge error request..."
+			send_ack_ref_error_request()
+		elif selected_cmd == 7: 
+			sys.exit(0)
 		else:
 			print "Unknown option entered."

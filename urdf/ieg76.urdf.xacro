@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<robot name="ieg76" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <material name="ieg76-metal">
+        <color rgba="0.5 0.45 0.4 1"/>
+    </material>
+    <xacro:property name="base_x" value="0.112"/>
+    <xacro:property name="base_y" value="0.090"/>
+    <xacro:property name="base_z" value="0.08725"/>
+    <xacro:property name="jaw_base_y" value="0.0228"/>
+    <xacro:property name="jaw_base_z" value="0.0191"/>
+   
+    <xacro:macro name="ieg76" params="parent prefix *origin">
+        <joint name="${prefix}mount" type="fixed">
+            <insert_block name="origin"/>
+            <parent link="${parent}"/>
+            <child link="${prefix}base"/>
+        </joint>
+        <link name="${prefix}base">
+            <visual>
+                <geometry>
+                    <mesh filename="package://weiss_gripper_ieg76/meshes/ieg76.stl"/>
+                </geometry>
+                <material name="black">
+                    <color rgba="0.0 0.0 0.0 1.0"/>
+                </material>
+            </visual>
+        </link>
+        <joint name="${prefix}jaw_mount" type="fixed">
+            <origin rpy="0 0 0" xyz="0 0 ${base_z + jaw_base_z}"/>
+            <parent link="${prefix}base"/>
+            <child link="${prefix}jaw_base"/>
+        </joint>
+        <link name="${prefix}jaw_base">
+            <visual>
+                <origin rpy="0 0 0" xyz="0 0 ${-jaw_base_z/2}"/>
+                <geometry>
+                    <box size="${base_x} ${jaw_base_y} ${jaw_base_z}"/>
+                </geometry>
+                <material name="ieg76-metal"/>
+            </visual>
+        </link>
+
+        <joint name="egl_position" type="prismatic">
+            <parent link="${prefix}jaw_base"/>
+            <child link="${prefix}finger_right"/>
+            <origin rpy="0.0 0.0 ${pi}" xyz="0.0255 -0.0255 -0.018"/>
+            <axis xyz="1 0 0"/>
+            <limit effort="100.0" lower="-0.015" upper="0.026" velocity="100.0"/>
+        </joint>
+        <link name="${prefix}finger_right">
+            <visual>
+                <geometry>
+                    <xacro:insert_block name="mesh"/>
+                </geometry>
+                <material name="grey ">
+                    <color rgba="0.5 0.5 0.5 1.0"/>
+                </material>
+            </visual>
+            <collision>
+                <geometry>
+                    <xacro:insert_block name="mesh"/>
+                </geometry>
+            </collision>
+        </link>
+        <joint name="egl_position_mimic" type="prismatic">
+            <parent link="${prefix}jaw_base"/>
+            <child link="${prefix}finger_left"/>
+            <origin rpy="0.0 0.0 0.0" xyz="-0.0255 0.0255 -0.018"/>
+            <axis xyz="1 0 0"/>
+            <limit effort="100.0" lower="-0.015" upper="0.026" velocity="100.0"/>
+            <mimic joint="egl_position" multiplier="1"/>
+        </joint>
+        <link name="${prefix}finger_left">
+            <visual>
+                <geometry>
+                     <xacro:insert_block name="mesh"/>
+                </geometry>
+                <material name="grey ">
+                    <color rgba="0.5 0.5 0.5 1.0"/>
+                </material>
+            </visual>
+            <collision>
+                <geometry>
+                     <xacro:insert_block name="mesh"/>
+                </geometry>
+            </collision>
+        </link>
+    </xacro:macro>
+</robot>
