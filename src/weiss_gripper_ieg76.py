@@ -50,7 +50,7 @@ def log_debug_flags():
 	rospy.logdebug("MAINT_FLAG = %s", MAINT_FLAG)
 
 def create_send_payload(command):
-	cmd_dict = {"query":"ID?\n", "activate":"PDOUT=[03,00]\n", "operate":"OPERATE()\n", "close":"PDOUT=[03,00]\n", "open":"PDOUT=[02,00]\n", "reference":"PDOUT=[07,00]\n", "deactivate":"PDOUT=[00,00]\n", "disconnect":"PDOUT=FALLBACK(1)\n"}
+	cmd_dict = {"query":"ID?\n", "activate":"PDOUT=[02,00]\n", "operate":"OPERATE()\n", "close":"PDOUT=[03,00]\n", "open":"PDOUT=[02,00]\n", "reference":"PDOUT=[07,00]\n", "deactivate":"PDOUT=[00,00]\n", "fallback":"PDOUT=FALLBACK(1)\n", "mode":"MODE?\n", "restart":"RESTART()\n", "reset":"PDOUT=[00,00]\n"}
 	# Query if command is known
 	if not(command in cmd_dict):
 		rospy.logerr("Command not recognized")
@@ -198,12 +198,24 @@ class serial_port_reader(threading.Thread):
 			time.sleep(0.5)
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Activate")
-			payload = create_send_payload("activate")
+			rospy.loginfo("Fallback")
+			payload = create_send_payload("fallback")
+			ser.write(payload)
+			time.sleep(0.5)
+			rospy.loginfo("Mode")
+			payload = create_send_payload("mode")
+			ser.write(payload)
+			time.sleep(0.5)
+			rospy.loginfo("Restart")
+			payload = create_send_payload("restart")
 			ser.write(payload)
 			time.sleep(0.5)
 			rospy.loginfo("Operate")
 			payload = create_send_payload("operate")
+			ser.write(payload)
+			time.sleep(0.5)
+			rospy.loginfo("Reset flags")
+			payload = create_send_payload("reset")
 			ser.write(payload)
 			time.sleep(0.5)
 		except Exception as e:
@@ -333,13 +345,24 @@ class weiss_gripper_ieg76(object):
 			time.sleep(0.5)
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Activate")
-			payload = create_send_payload("activate")
+			rospy.loginfo("Fallback")
+			payload = create_send_payload("fallback")
 			ser.write(payload)
 			time.sleep(0.5)
-
-			rospy.loginfo("Operate") 
+			rospy.loginfo("Mode")
+			payload = create_send_payload("mode")
+			ser.write(payload)
+			time.sleep(0.5)
+			rospy.loginfo("Restart")
+			payload = create_send_payload("restart")
+			ser.write(payload)
+			time.sleep(0.5)
+			rospy.loginfo("Operate")
 			payload = create_send_payload("operate")
+			ser.write(payload)
+			time.sleep(0.5)
+			rospy.loginfo("Reset flags")
+			payload = create_send_payload("reset")
 			ser.write(payload)
 			time.sleep(0.5)
 		
@@ -563,9 +586,19 @@ class weiss_gripper_ieg76(object):
 	def shutdown_handler(self):
 		global shutdown_driver
 		shutdown_driver = True
+		payload = create_send_payload("deactivate")
+
 		try:
+			rospy.loginfo("Deactivate.")
 			serial_port_lock.acquire()
+			ser.write(payload)
+			time.sleep(0.5)
+			rospy.loginfo("Fallback.")
+			payload = create_send_payload("fallback")
+			ser.write(payload)
+			time.sleep(0.5)
 			if ser.isOpen():
+				rospy.loginfo("Close port.")
 				ser.close()
 		except SerialException as e:
 			rospy.logerr("Error closing the serial port: %s", e)
