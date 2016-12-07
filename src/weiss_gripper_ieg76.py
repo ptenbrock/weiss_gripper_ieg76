@@ -14,43 +14,33 @@ from diagnostic_msgs.msg import DiagnosticStatus
 ser = serial.Serial()
 serial_port_lock = threading.Lock()
 
-status_flags_lock = threading.Lock()
+flags_lock = threading.Lock()
 fresh_flags_cond_var = threading.Condition()#this uses the lock created by default
-reference_cond_var = threading.Condition()
-jaws_closed_cond_var = threading.Condition()
-jaws_opened_cond_var = threading.Condition()
-object_grasped_cond_var = threading.Condition()
-fault_cond_var = threading.Condition()
+update_flags_cond_var = threading.Condition()
+reference_cond_var = threading.Condition(flags_lock)
+jaws_closed_cond_var = threading.Condition(flags_lock)
+jaws_opened_cond_var = threading.Condition(flags_lock)
+object_grasped_cond_var = threading.Condition(flags_lock)
+fault_cond_var = threading.Condition(flags_lock)
 
-POS = 0.0
-OPEN_FLAG = 0b0
-OLD_OPEN_FLAG = 0b0
-CLOSED_FLAG = 0b0
-OLD_CLOSED_FLAG = 0b0
-HOLDING_FLAG = 0b0
-OLD_HOLDING_FLAG = 0b0
-FAULT_FLAG = 0b0
-IDLE_FLAG = 0b0
-OLD_IDLE_FLAG = 0b0
-TEMPFAULT_FLAG = 0b0
-TEMPWARN_FLAG = 0b0
-MAINT_FLAG = 0b0
+current_flags_dict = {"POS":0.0, "OPEN_FLAG":0b0, "CLOSED_FLAG":0b0, "HOLDING_FLAG":0b0, "FAULT_FLAG":0b0, "IDLE_FLAG":0b0, "TEMPFAULT_FLAG":0b0, "TEMPWARN_FLAG":0b0, "MAINT_FLAG":0b0}
+old_flags_dict = {"POS":0.0, "OPEN_FLAG":0b0, "CLOSED_FLAG":0b0, "HOLDING_FLAG":0b0, "FAULT_FLAG":0b0, "IDLE_FLAG":0b0, "TEMPFAULT_FLAG":0b0, "TEMPWARN_FLAG":0b0, "MAINT_FLAG":0b0}
 
 shutdown_driver = False
 
 def log_debug_flags():
-	rospy.logdebug("POS = %f", POS)
-	rospy.logdebug("IDLE_FLAG = %s", IDLE_FLAG)
-	rospy.logdebug("OPEN_FLAG = %s", OPEN_FLAG)
-	rospy.logdebug("CLOSED_FLAG = %s", CLOSED_FLAG)
-	rospy.logdebug("HOLDING_FLAG = %s", HOLDING_FLAG)
-	rospy.logdebug("FAULT_FLAG = %s", FAULT_FLAG)
-	rospy.logdebug("TEMPFAULT_FLAG = %s", TEMPFAULT_FLAG)
-	rospy.logdebug("TEMPWARN_FLAG = %s", TEMPWARN_FLAG)
-	rospy.logdebug("MAINT_FLAG = %s", MAINT_FLAG)
+	rospy.logdebug("POS = %f", current_flags_dict["POS"])
+	rospy.logdebug("IDLE_FLAG = %s", current_flags_dict["IDLE_FLAG"])
+	rospy.logdebug("OPEN_FLAG = %s", current_flags_dict["OPEN_FLAG"])
+	rospy.logdebug("CLOSED_FLAG = %s", current_flags_dict["CLOSED_FLAG"])
+	rospy.logdebug("HOLDING_FLAG = %s", current_flags_dict["HOLDING_FLAG"])
+	rospy.logdebug("FAULT_FLAG = %s", current_flags_dict["FAULT_FLAG"])
+	rospy.logdebug("TEMPFAULT_FLAG = %s", current_flags_dict["TEMPFAULT_FLAG"])
+	rospy.logdebug("TEMPWARN_FLAG = %s", current_flags_dict["TEMPWARN_FLAG"])
+	rospy.logdebug("MAINT_FLAG = %s", current_flags_dict["MAINT_FLAG"])
 
 def create_send_payload(command):
-	cmd_dict = {"query":"ID?\n", "activate":"PDOUT=[02,00]\n", "operate":"OPERATE()\n", "close":"PDOUT=[03,00]\n", "open":"PDOUT=[02,00]\n", "reference":"PDOUT=[07,00]\n", "deactivate":"PDOUT=[00,00]\n", "fallback":"PDOUT=FALLBACK(1)\n", "mode":"MODE?\n", "restart":"RESTART()\n", "reset":"PDOUT=[00,00]\n"}
+	cmd_dict = {"query":"ID?\n", "activate":"PDOUT=[02,00]\n", "operate":"OPERATE()\n", "close":"PDOUT=[03,00]\n", "open":"PDOUT=[02,00]\n", "reference":"PDOUT=[07,00]\n", "deactivate":"PDOUT=[00,00]\n", "fallback":"FALLBACK(1)\n", "mode":"MODE?\n", "restart":"RESTART()\n", "reset":"PDOUT=[00,00]\n"}
 	# Query if command is known
 	if not(command in cmd_dict):
 		rospy.logerr("Command not recognized")
@@ -77,22 +67,11 @@ class serial_port_reader(threading.Thread):
 	def extract_info(self, read_data_hexstr):
 		fresh_flags_cond_var.acquire()
 		#rospy.logdebug("serial_port_reader inside extract_info")
-		global POS
-		global OPEN_FLAG 
-		global OLD_OPEN_FLAG
-		global CLOSED_FLAG 
-		global OLD_CLOSED_FLAG 
-		global HOLDING_FLAG
-		global OLD_HOLDING_FLAG 
-		global FAULT_FLAG
-		global IDLE_FLAG
-		global OLD_IDLE_FLAG
-		global TEMPFAULT_FLAG
-		global TEMPWARN_FLAG
-		global MAINT_FLAG
+		global current_flags_dict
+		global old_flags_dict
 		#the data read from the serial port is @PDIN=[BYTE0,BYTE1,BYTE2,BYTE3] (see pag.20 in user manual)
 		position_hexstr = read_data_hexstr[7:9] + read_data_hexstr[10:12] #remove the comma "," bewteen "BYTE0" and "BYTE1"
-		POS = int(position_hexstr, 16) / float(100) #position in mm
+		current_flags_dict["POS"] = int(position_hexstr, 16) / float(100) #position in mm
 
 		byte3_hexstr = read_data_hexstr[16:18]
 		byte3_binary = int(byte3_hexstr, 16)
@@ -101,9 +80,9 @@ class serial_port_reader(threading.Thread):
 		reference_cond_var.acquire()
 		try:
 			#rospy.logdebug("serial_port_reader has acquired reference_cond_var")
-			OLD_IDLE_FLAG = IDLE_FLAG
-			IDLE_FLAG = byte3_binary & mask
-			if OLD_IDLE_FLAG == 0 and IDLE_FLAG == 1:
+			old_flags_dict["IDLE_FLAG"] = current_flags_dict["IDLE_FLAG"]
+			current_flags_dict["IDLE_FLAG"] = byte3_binary & mask
+			if old_flags_dict["IDLE_FLAG"] == 0 and current_flags_dict["IDLE_FLAG"] == 1:
 				# signal the event
 				reference_cond_var.notify()
 				rospy.logdebug("Reference event triggered")
@@ -114,9 +93,9 @@ class serial_port_reader(threading.Thread):
 		byte3_binary = byte3_binary >> 1
 		jaws_opened_cond_var.acquire()
 		try:
-			OLD_OPEN_FLAG = OPEN_FLAG
-			OPEN_FLAG = byte3_binary & mask
-			if OLD_OPEN_FLAG == 0 and OPEN_FLAG == 1:
+			old_flags_dict["OPEN_FLAG"] = current_flags_dict["OPEN_FLAG"]
+			current_flags_dict["OPEN_FLAG"] = byte3_binary & mask
+			if old_flags_dict["OPEN_FLAG"] == 0 and current_flags_dict["OPEN_FLAG"] == 1:
 				#the transition from jaws not opened to jaws opened has occured. Signal this event.
 				jaws_opened_cond_var.notify()
 				rospy.logdebug("Open event triggered")
@@ -126,9 +105,9 @@ class serial_port_reader(threading.Thread):
 		byte3_binary = byte3_binary >> 1
 		jaws_closed_cond_var.acquire()
 		try:
-			OLD_CLOSED_FLAG = CLOSED_FLAG
-			CLOSED_FLAG = byte3_binary & mask
-			if OLD_CLOSED_FLAG == 0 and CLOSED_FLAG == 1:
+			old_flags_dict["CLOSED_FLAG"] = current_flags_dict["CLOSED_FLAG"]
+			current_flags_dict["CLOSED_FLAG"] = byte3_binary & mask
+			if old_flags_dict["CLOSED_FLAG"] == 0 and current_flags_dict["CLOSED_FLAG"] == 1:
 				#the transition from jaws not closed to jaws closed has occured. Signal this event.
 				jaws_closed_cond_var.notify()
 				rospy.logdebug("Close event triggered")
@@ -138,9 +117,9 @@ class serial_port_reader(threading.Thread):
 		byte3_binary = byte3_binary >> 1
 		object_grasped_cond_var.acquire()
 		try:
-			OLD_HOLDING_FLAG = HOLDING_FLAG
-			HOLDING_FLAG = byte3_binary & mask
-			if OLD_HOLDING_FLAG == 0 and HOLDING_FLAG == 1:
+			old_flags_dict["HOLDING_FLAG"] = current_flags_dict["HOLDING_FLAG"]
+			current_flags_dict["HOLDING_FLAG"] = byte3_binary & mask
+			if old_flags_dict["HOLDING_FLAG"] == 0 and current_flags_dict["HOLDING_FLAG"] == 1:
 				#the transition from not holding/grasping an object to holding/grasping an object has occured. Signal this event.
 				object_grasped_cond_var.notify()
 				rospy.logdebug("Grasp event triggered")
@@ -150,18 +129,18 @@ class serial_port_reader(threading.Thread):
 		byte3_binary = byte3_binary >> 1
 		fault_cond_var.acquire()
 		try:
-			FAULT_FLAG = byte3_binary & mask
+			current_flags_dict["FAULT_FLAG"] = byte3_binary & mask
 		finally:
 			fault_cond_var.release()
 
 		byte3_binary = byte3_binary >> 1
-		TEMPFAULT_FLAG = byte3_binary & mask
+		current_flags_dict["TEMPFAULT_FLAG"] = byte3_binary & mask
 
 		byte3_binary = byte3_binary >> 1
-		TEMPWARN_FLAG = byte3_binary & mask
+		current_flags_dict["TEMPWARN_FLAG"] = byte3_binary & mask
 
 		byte3_binary = byte3_binary >> 1
-		MAINT_FLAG = byte3_binary & mask
+		current_flags_dict["MAINT_FLAG"] = byte3_binary & mask
 
 		fresh_flags_cond_var.notify()# signal to states_publisher that new data is available for publishing
 		fresh_flags_cond_var.release()
@@ -169,6 +148,7 @@ class serial_port_reader(threading.Thread):
 	def reconnect_serial_port(self):
 		global ser
 		serial_port_addr = ser.port
+		rospy.loginfo("Reconnecting to the serial port %s from serial_port_reader...", serial_port_addr)
 		if ser.isOpen(): 
 			ser.close()
 		ser = None
@@ -225,8 +205,7 @@ class serial_port_reader(threading.Thread):
 		#read from port
 		connection_errors_no = 0
 		incoming_bytes_no = 0
-		serial_port_status = ser.isOpen()
-		rospy.logdebug("serial_port_reader.run() serial_port_status = %s", serial_port_status)
+		#rospy.logdebug("serial_port_reader.run() serial_port_status = %s", ser.isOpen())
 		while (not shutdown_driver) and ser.isOpen():
 			try:
 				incoming_bytes_no = ser.inWaiting()
@@ -240,6 +219,7 @@ class serial_port_reader(threading.Thread):
 					else:
 						rospy.logdebug("incoming_bytes_no = %d: %s",incoming_bytes_no, data_str)
 			except Exception as e:
+				rospy.logerr("serial_port_reader.run(): %s", e)
 				connection_errors_no += 1
 				if(connection_errors_no > 5):
 					connection_errors_no = 0 #reset the counter
@@ -263,36 +243,39 @@ class states_publisher(threading.Thread):
 
 	def run(self):
 		global fresh_flags_cond_var
+		rospy.logdebug("states_publisher.run()")
 		while not shutdown_driver:
 			fresh_flags_cond_var.acquire()
 			fresh_flags_cond_var.wait()
 			self.updater.update()
+			rospy.logdebug("states_publisher publishing states...")
 			self.publish_states()
+			rospy.logdebug("states_publisher states published.")
 			#self.updater.force_update()
 			fresh_flags_cond_var.release()
 			rospy.sleep(self.loop_time)
 		rospy.logdebug("states_publisher_thread done.")
 
 	def produce_diagnostics(self, stat):
-		if FAULT_FLAG == True:
+		if current_flags_dict["FAULT_FLAG"] == True:
 			stat.summary(DiagnosticStatus.ERROR, "The fault bit of the gripper is 1.")
 		else:
 			stat.summary(DiagnosticStatus.OK, "The fault bit of the gripper is 0.")
-		stat.add("Position", POS)
-		stat.add("Idle Flag", IDLE_FLAG)
-		stat.add("Open Flag", OPEN_FLAG)
-		stat.add("Closed Flag", CLOSED_FLAG)
-		stat.add("Holding Flag", HOLDING_FLAG)
-		stat.add("Error Flag", FAULT_FLAG)
-		stat.add("Temperature Error Flag", TEMPFAULT_FLAG)
-		stat.add("Temperature Warning Flag", TEMPWARN_FLAG)
-		stat.add("Maintenance Flag", MAINT_FLAG)
+		stat.add("Position", current_flags_dict["POS"])
+		stat.add("Idle Flag", current_flags_dict["IDLE_FLAG"])
+		stat.add("Open Flag", current_flags_dict["OPEN_FLAG"])
+		stat.add("Closed Flag", current_flags_dict["CLOSED_FLAG"])
+		stat.add("Holding Flag", current_flags_dict["HOLDING_FLAG"])
+		stat.add("Error Flag", current_flags_dict["FAULT_FLAG"])
+		stat.add("Temperature Error Flag", current_flags_dict["TEMPFAULT_FLAG"])
+		stat.add("Temperature Warning Flag", current_flags_dict["TEMPWARN_FLAG"])
+		stat.add("Maintenance Flag", current_flags_dict["MAINT_FLAG"])
 		return stat
 
 	def publish_states(self):
 		self.joint_state_msg.header.stamp = rospy.Time.now()
 		self.joint_state_msg.position = []
-		self.joint_state_msg.position.append(POS)
+		self.joint_state_msg.position.append(current_flags_dict["POS"])
 		try:
 			self.pub_freq_time_diag.publish(self.joint_state_msg)
 		except:
@@ -320,7 +303,9 @@ class weiss_gripper_ieg76(object):
 				rospy.loginfo("Retrying to open the serial port %s...", serial_port_addr)
 				time.sleep(1)
 		
-		rospy.loginfo("Serial port opened: %s", ser.isOpen())
+		rospy.loginfo("Serial port %s opened: %s", ser.port, ser.isOpen())
+
+		self.initialize_gripper()
 
 		serv_ref = rospy.Service('reference', Trigger, self.handle_reference)
 		serv_open = rospy.Service('open_jaws', Trigger, self.handle_open_jaws)
@@ -332,7 +317,6 @@ class weiss_gripper_ieg76(object):
 		self.serial_port_reader_thread = serial_port_reader()
 		self.states_publisher_thread = states_publisher(0.8)
 
-		self.initialize_gripper()
 
 		rospy.loginfo("Ready to receive requests.")
 
@@ -371,6 +355,18 @@ class weiss_gripper_ieg76(object):
 		finally:
 			serial_port_lock.release()
 
+	def check_if_referenced(self):
+		#when the gripper is not referenced all flags are 0
+		gripper_referenced = False
+		
+		if (current_flags_dict["IDLE_FLAG"] == 1 or current_flags_dict["OPEN_FLAG"] == 1 or 
+				current_flags_dict["CLOSED_FLAG"] == 1 or current_flags_dict["HOLDING_FLAG"] == 1 or
+				current_flags_dict["FAULT_FLAG"] == 1 or current_flags_dict["TEMPFAULT_FLAG"] == 1 or
+				current_flags_dict["TEMPWARN_FLAG"] == 1 or current_flags_dict["MAINT_FLAG"] == 1):
+			gripper_referenced = True
+
+		return gripper_referenced
+
 	def handle_reference(self, req):
 		rospy.loginfo("Referencing")
 		payload = create_send_payload("reference")
@@ -389,7 +385,7 @@ class weiss_gripper_ieg76(object):
 				serial_port_lock.release()
 				
 				reference_cond_var.wait(timeout=3.0)
-				if IDLE_FLAG:
+				if current_flags_dict["IDLE_FLAG"]:
 					rospy.loginfo("Gripper referenced.")
 					reply.success = True
 					reply.message = "Gripper referenced."
@@ -424,7 +420,7 @@ class weiss_gripper_ieg76(object):
 				serial_port_lock.release()	
 				
 			jaws_opened_cond_var.wait(timeout=3.0)
-			if OPEN_FLAG:
+			if current_flags_dict["OPEN_FLAG"]:
 				rospy.loginfo("Jaws opened.")
 				reply.success = True
 				reply.message = "Jaws opened."
@@ -432,7 +428,11 @@ class weiss_gripper_ieg76(object):
 				rospy.logerr("Failed to open the jaws.")
 				reply.success = False
 				reply.message = "Failed to open the jaws."
-				if HOLDING_FLAG:
+				gripper_referenced = self.check_if_referenced()
+				if not gripper_referenced:
+					rospy.logwarn("Reference the gripper before usage.")
+					reply.message = reply.message + " Reference the gripper before usage."
+				if current_flags_dict["HOLDING_FLAG"]:
 					rospy.logwarn("Remove the object which is blocking the claws from opening completly and try again.")
 					reply.message = reply.message + " Remove the object which is blocking the claws from opening completly and try again."
 		except Exception as e:
@@ -460,7 +460,7 @@ class weiss_gripper_ieg76(object):
 				serial_port_lock.release()	
 
 			jaws_closed_cond_var.wait(timeout=3.0)#always returns None for python 2
-			if CLOSED_FLAG:
+			if current_flags_dict["CLOSED_FLAG"]:
 				rospy.loginfo("Jaws completly closed.")
 				reply.success = True
 				reply.message = "Jaws completly closed."	
@@ -468,6 +468,11 @@ class weiss_gripper_ieg76(object):
 				rospy.logerr("Failed to completly close the jaws.")
 				reply.success = False
 				reply.message = "Failed to completly close the jaws."
+				gripper_referenced = self.check_if_referenced()
+				rospy.loginfo("gripper_referenced = %d", gripper_referenced)
+				if not gripper_referenced:
+					rospy.logwarn("Reference the gripper before usage.")
+					reply.message = reply.message + " Reference the gripper before usage."
 
 		except Exception as e:
 			rospy.logerr("weiss_gripper_ieg76.handle_close_jaws(): %s", e)
@@ -495,7 +500,7 @@ class weiss_gripper_ieg76(object):
 				serial_port_lock.release()		
 
 				object_grasped_cond_var.wait(timeout=3.0)
-				if HOLDING_FLAG:
+				if current_flags_dict["HOLDING_FLAG"]:
 					rospy.loginfo("Object grasped.")
 					reply.success = True
 					reply.message = "Object grasped."
@@ -503,7 +508,11 @@ class weiss_gripper_ieg76(object):
 					rospy.logerr("Timed out while trying to grasp an object.")
 					reply.success = False
 					reply.message = "Timed out while trying to grasp an object."
-					if CLOSED_FLAG: 
+					gripper_referenced = self.check_if_referenced()
+					if not gripper_referenced:
+						rospy.logwarn("Reference the gripper before usage.")
+						reply.message = reply.message + " Reference the gripper before usage."
+					if current_flags_dict["CLOSED_FLAG"]: 
 						rospy.logwarn("No object to grasp.")
 						reply.message = reply.message + " No object to grasp."
 		except Exception as e:
@@ -534,7 +543,7 @@ class weiss_gripper_ieg76(object):
 				serial_port_lock.release()
 				
 				fault_cond_var.acquire()
-				if not FAULT_FLAG:
+				if not current_flags_dict["FAULT_FLAG"]:
 					rospy.loginfo("Error acknowledged.")
 					reply.success = True
 					reply.message = "Error acknowledged"
@@ -567,7 +576,7 @@ class weiss_gripper_ieg76(object):
 				serial_port_lock.release()
 				
 				fault_cond_var.acquire()
-				if not FAULT_FLAG:
+				if not current_flags_dict["FAULT_FLAG"]:
 					rospy.loginfo("Reference error acknowledged.")
 					reply.success = True
 					reply.message = "Reference error acknowledged"
@@ -585,6 +594,7 @@ class weiss_gripper_ieg76(object):
 
 	def shutdown_handler(self):
 		global shutdown_driver
+		global ser
 		shutdown_driver = True
 		payload = create_send_payload("deactivate")
 

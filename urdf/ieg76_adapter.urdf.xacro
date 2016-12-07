@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ieg76_adapter">
+
+    <xacro:macro name="ieg76_adapter" params="parent prefix *origin">
+
+        <!-- mount the adapter to the robot -->
+        <joint name="${prefix}adapter_joint_hubwards" type="fixed">
+            <xacro:insert_block name="origin"/>
+            <parent link="${parent}"/>
+            <child link="${prefix}adapter_hubwards"/>
+        </joint>
+
+        <link name="${prefix}adapter_hubwards">
+            <visual>
+                <origin xyz="0 0 0.005" rpy="0 0 0"/>
+                <geometry>
+                    <box size="0.076 0.06 0.01"/>
+                </geometry>
+                <material name="metal">
+                  <color rgba="0 0 0 1"/>
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0.005" rpy="0 0 0"/>
+                <geometry>
+                    <box size="0.076 0.06 0.01"/>
+                </geometry>
+            </collision>
+        </link>
+
+        <joint name="${prefix}adapter_joint_rimwards" type="fixed" >
+          <origin xyz="0 0 0.01" rpy="0 0 0"/>
+          <parent link="${prefix}adapter_hubwards" />
+          <child link="${prefix}adapter_rimwards" />
+        </joint>
+
+        <link name="${prefix}adapter_rimwards"/>
+
+    </xacro:macro>
+
+</robot>
