@@ -433,8 +433,8 @@ class weiss_gripper_ieg76(object):
 					rospy.logwarn("Reference the gripper before usage.")
 					reply.message = reply.message + " Reference the gripper before usage."
 				if current_flags_dict["HOLDING_FLAG"]:
-					rospy.logwarn("Remove the object which is blocking the claws from opening completly and try again.")
-					reply.message = reply.message + " Remove the object which is blocking the claws from opening completly and try again."
+					rospy.logwarn("Remove the object which is blocking the claws from opening completely and try again.")
+					reply.message = reply.message + " Remove the object which is blocking the claws from opening completely and try again."
 		except Exception as e:
 			rospy.logerr("weiss_gripper_ieg76.handle_open_jaws(): %s", e)				
 		finally:
@@ -444,7 +444,7 @@ class weiss_gripper_ieg76(object):
 		return reply
 
 	def handle_close_jaws(self, req):
-		rospy.loginfo("Completly closing the jaws.")
+		rospy.loginfo("completely closing the jaws.")
 		payload = create_send_payload("close")
 		reply = TriggerResponse()
 
@@ -461,13 +461,13 @@ class weiss_gripper_ieg76(object):
 
 			jaws_closed_cond_var.wait(timeout=3.0)#always returns None for python 2
 			if current_flags_dict["CLOSED_FLAG"]:
-				rospy.loginfo("Jaws completly closed.")
+				rospy.loginfo("Jaws completely closed.")
 				reply.success = True
-				reply.message = "Jaws completly closed."	
+				reply.message = "Jaws completely closed."	
 			else:
-				rospy.logerr("Failed to completly close the jaws.")
+				rospy.logerr("Failed to completely close the jaws.")
 				reply.success = False
-				reply.message = "Failed to completly close the jaws."
+				reply.message = "Failed to completely close the jaws."
 				gripper_referenced = self.check_if_referenced()
 				rospy.loginfo("gripper_referenced = %d", gripper_referenced)
 				if not gripper_referenced:
