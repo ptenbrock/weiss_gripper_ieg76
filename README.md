@@ -68,16 +68,18 @@ The gripper provides 4 gripping configurations. The linux driver uses the first 
 		$ source devel/setup.bash
 
 	To check that the ROS package has been successfully sourced execute the command `rospack find weiss_gripper_ieg76` and the absolute path to the ROS package *weiss_gripper_ieg76* should be displayed in the terminal.
- 4. Make the python scripts *weiss_gripper_ieg76.py* and *test_client.py* executable:
 
-		$ chmod +x src/weiss_gripper_ieg76/src/weiss_gripper_ieg76.py
-		$ chmod +x src/weiss_gripper_ieg76/src/test_client.py
+ 4. Add yourself to the group *dialout* in order to get access the serial port `sudo adduser $USER dialout`.
 
- 5. Add yourself to the group *dialout* in order to get access the serial port `$sudo usermode -a -G dialout $USER`. You need to log-out/log-in to apply the changes.
+ You need to log-out/log-in to apply the changes.
  
 ###Start-up
 
- 1. The driver uses by default the port */dev/ttyACM0* to communicate with the gripper. Issue the command `ls /dev/tty*` before and after pluging-in the USB cabel into your computer to determine the port allocated for the device. Besides */dev/ttyACM0*, another common allocated port is */dev/ttyACM1*. If this is the case then open the file *weiss_gripper_ieg76.launch* and change the line:
+ 1. The driver uses by default the port */dev/ttyACM0* to communicate with the gripper. Issue the command
+
+ `ls /dev/tty*`
+
+ before and after pluging-in the USB cabel into your computer to determine the port allocated for the device. Besides */dev/ttyACM0*, another common allocated port is */dev/ttyACM1*. If this is the case then open the file *weiss_gripper_ieg76.launch* and change the line:
 
 		<param name="serial_port_address" value="/dev/ttyACM0"/>
 to
