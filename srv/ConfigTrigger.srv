@@ -1,0 +1,4 @@
+int8 grasp_config_no # indicate the number of the grasping configuration to be used
+---
+bool success   # indicate successful run of triggered service
+string message # informational, e.g. for error messages

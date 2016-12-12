@@ -7,7 +7,8 @@ import rospy
 import threading
 import diagnostic_updater
 from serial import SerialException
-from std_srvs.srv import Empty, EmptyResponse, Trigger, TriggerResponse
+from std_srvs.srv import Trigger, TriggerResponse
+from weiss_gripper_ieg76.srv import ConfigTrigger, ConfigTriggerResponse
 from sensor_msgs.msg import JointState
 from diagnostic_msgs.msg import DiagnosticStatus 
 
@@ -39,14 +40,29 @@ def log_debug_flags():
 	rospy.logdebug("TEMPWARN_FLAG = %s", current_flags_dict["TEMPWARN_FLAG"])
 	rospy.logdebug("MAINT_FLAG = %s", current_flags_dict["MAINT_FLAG"])
 
-def create_send_payload(command):
-	cmd_dict = {"query":"ID?\n", "activate":"PDOUT=[02,00]\n", "operate":"OPERATE()\n", "close":"PDOUT=[03,00]\n", "open":"PDOUT=[02,00]\n", "reference":"PDOUT=[07,00]\n", "deactivate":"PDOUT=[00,00]\n", "fallback":"FALLBACK(1)\n", "mode":"MODE?\n", "restart":"RESTART()\n", "reset":"PDOUT=[00,00]\n"}
-	# Query if command is known
-	if not(command in cmd_dict):
-		rospy.logerr("Command not recognized")
-		return None
+def create_send_payload(command, grasp_config_no = 0):
+	if grasp_config_no == 0:
+		grasp_index = "00"
+	elif grasp_config_no == 1:
+		grasp_index = "01"
+	elif grasp_config_no == 2:
+		grasp_index = "02"
+	elif grasp_config_no == 2:
+		grasp_index = "03"
+	else:
+		raise ValueError("Unknown grasp config no " + str(grasp_config_no) +" given. Valid grasp configuration numbers are 0, 1, 2, 3.")
 
-	send_cmd = cmd_dict[command]
+	if command == "open":
+		send_cmd = "PDOUT=[02," + grasp_index + "]\n"
+	elif command == "close":
+		send_cmd = "PDOUT=[03," + grasp_index + "]\n"
+	else:
+		cmd_dict = {"query":"ID?\n", "activate":"PDOUT=[02,00]\n", "operate":"OPERATE()\n", "reference":"PDOUT=[07,00]\n", "deactivate":"PDOUT=[00,00]\n", "fallback":"FALLBACK(1)\n", "mode":"MODE?\n", "restart":"RESTART()\n", "reset":"PDOUT=[00,00]\n"}
+		# Query if command is known
+		if not(command in cmd_dict):
+			rospy.logerr("Command not recognized")
+			return None
+		send_cmd = cmd_dict[command]
 
 	# create format for command
 	fmt = '>'
@@ -281,11 +297,11 @@ class states_publisher(threading.Thread):
 		except:
 			rospy.logerr("\nClosed topics.")
 
-class weiss_gripper_ieg76(object):
+class driver(object):
 	def __init__(self):
 		global ser
-		#rospy.init_node('weiss_gripper_ieg76_node', log_level=rospy.DEBUG)
-		rospy.init_node('weiss_gripper_ieg76_node')
+		#rospy.init_node('driver_node', log_level=rospy.DEBUG)
+		rospy.init_node('driver_node')
 		rospy.on_shutdown(self.shutdown_handler)
 		serial_port_addr = rospy.get_param("~serial_port_address", '/dev/ttyACM0')
 		ser.port = serial_port_addr
@@ -308,9 +324,9 @@ class weiss_gripper_ieg76(object):
 		self.initialize_gripper()
 
 		serv_ref = rospy.Service('reference', Trigger, self.handle_reference)
-		serv_open = rospy.Service('open_jaws', Trigger, self.handle_open_jaws)
-		serv_close = rospy.Service('close_jaws', Trigger, self.handle_close_jaws)
-		serv_grasp = rospy.Service('grasp_object', Trigger, self.handle_grasp_object)
+		serv_open = rospy.Service('open_jaws', ConfigTrigger, self.handle_open_jaws)
+		serv_close = rospy.Service('close_jaws', ConfigTrigger, self.handle_close_jaws)
+		serv_grasp = rospy.Service('grasp_object', ConfigTrigger, self.handle_grasp_object)
 		serv_ack_error = rospy.Service('ack_error', Trigger, self.handle_ack_error)
 		serv_ack_ref_error = rospy.Service('ack_ref_error', Trigger, self.handle_ack_ref_error)
 
@@ -394,7 +410,7 @@ class weiss_gripper_ieg76(object):
 					reply.success = False
 					reply.message = "Failed to reference the gripper."
 		except Exception as e:
-			rospy.logerr("weiss_gripper_ieg76.handle_reference(): %s", e)
+			rospy.logerr("driver.handle_reference(): %s", e)
 		finally:
 			log_debug_flags()
 			reference_cond_var.release()
@@ -403,8 +419,14 @@ class weiss_gripper_ieg76(object):
 
 	def handle_open_jaws(self, req):
 		rospy.loginfo("Opening the jaws.")
-		payload = create_send_payload("open")
-		reply = TriggerResponse()
+		try:
+			reply = ConfigTriggerResponse()
+			payload = create_send_payload("open", req.grasp_config_no)
+		except ValueError as e:
+			rospy.logerr("driver.handle_open_jaws(): %s", e)
+			reply.success = False
+			reply.message = "Failed to open the jaws because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
+			return reply
 
 		jaws_opened_cond_var.acquire()
 		try:
@@ -421,13 +443,13 @@ class weiss_gripper_ieg76(object):
 				
 			jaws_opened_cond_var.wait(timeout=3.0)
 			if current_flags_dict["OPEN_FLAG"]:
-				rospy.loginfo("Jaws opened.")
+				rospy.loginfo("Jaws opened using grasp config %d.", req.grasp_config_no)
 				reply.success = True
-				reply.message = "Jaws opened."
+				reply.message = "Jaws opened using grasp config " + str(req.grasp_config_no) + "."
 			else:
-				rospy.logerr("Failed to open the jaws.")
+				rospy.logerr("Failed to open the jaws using grasp config %d.", req.grasp_config_no)
 				reply.success = False
-				reply.message = "Failed to open the jaws."
+				reply.message = "Failed to open the jaws using grasp config " + str(req.grasp_config_no) + "."
 				gripper_referenced = self.check_if_referenced()
 				if not gripper_referenced:
 					rospy.logwarn("Reference the gripper before usage.")
@@ -436,7 +458,7 @@ class weiss_gripper_ieg76(object):
 					rospy.logwarn("Remove the object which is blocking the claws from opening completely and try again.")
 					reply.message = reply.message + " Remove the object which is blocking the claws from opening completely and try again."
 		except Exception as e:
-			rospy.logerr("weiss_gripper_ieg76.handle_open_jaws(): %s", e)				
+			rospy.logerr("driver.handle_open_jaws(): %s", e)				
 		finally:
 			log_debug_flags()
 			jaws_opened_cond_var.release()		
@@ -445,8 +467,14 @@ class weiss_gripper_ieg76(object):
 
 	def handle_close_jaws(self, req):
 		rospy.loginfo("completely closing the jaws.")
-		payload = create_send_payload("close")
-		reply = TriggerResponse()
+		try:
+			reply = ConfigTriggerResponse()
+			payload = create_send_payload("close", req.grasp_config_no)
+		except ValueError as e:
+			rospy.logerr("driver.handle_close_jaws(): %s", e)
+			reply.success = False
+			reply.message = "Failed to close the jaws because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
+			return reply
 
 		jaws_closed_cond_var.acquire()
 		try:
@@ -455,19 +483,19 @@ class weiss_gripper_ieg76(object):
 				serial_port_lock.acquire()
 				ser.write(payload)
 			except SerialException as e:
-				rospy.logerr("weiss_gripper_ieg76.handle_close_jaws() while trying to write on the serial port: %s", e)	
+				rospy.logerr("driver.handle_close_jaws() while trying to write on the serial port: %s", e)	
 			finally:
 				serial_port_lock.release()	
 
 			jaws_closed_cond_var.wait(timeout=3.0)#always returns None for python 2
 			if current_flags_dict["CLOSED_FLAG"]:
-				rospy.loginfo("Jaws completely closed.")
+				rospy.loginfo("Jaws completely closed using grasp config %d.", req.grasp_config_no)
 				reply.success = True
-				reply.message = "Jaws completely closed."	
+				reply.message = "Jaws completely closed using grasp config " + str(req.grasp_config_no) + "."
 			else:
-				rospy.logerr("Failed to completely close the jaws.")
+				rospy.logerr("Failed to completely close the jaws using grasp config %d.", req.grasp_config_no)
 				reply.success = False
-				reply.message = "Failed to completely close the jaws."
+				reply.message = "Failed to completely close the jaws using grasp config " + str(req.grasp_config_no) + "."
 				gripper_referenced = self.check_if_referenced()
 				rospy.loginfo("gripper_referenced = %d", gripper_referenced)
 				if not gripper_referenced:
@@ -475,7 +503,7 @@ class weiss_gripper_ieg76(object):
 					reply.message = reply.message + " Reference the gripper before usage."
 
 		except Exception as e:
-			rospy.logerr("weiss_gripper_ieg76.handle_close_jaws(): %s", e)
+			rospy.logerr("driver.handle_close_jaws(): %s", e)
 		finally:
 			log_debug_flags()
 			jaws_closed_cond_var.release()
@@ -484,8 +512,14 @@ class weiss_gripper_ieg76(object):
 
 	def handle_grasp_object(self, req):
 		rospy.loginfo("Grasping object.")
-		payload = create_send_payload("close")
-		reply = TriggerResponse()
+		try:
+			reply = ConfigTriggerResponse()
+			payload = create_send_payload("close", req.grasp_config_no)
+		except ValueError as e:
+			rospy.logerr("driver.handle_grasp_object(): %s", e)
+			reply.success = False
+			reply.message = "Failed to grasp an object because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
+			return reply
 
 		object_grasped_cond_var.acquire()
 		try:
@@ -501,13 +535,13 @@ class weiss_gripper_ieg76(object):
 
 				object_grasped_cond_var.wait(timeout=3.0)
 				if current_flags_dict["HOLDING_FLAG"]:
-					rospy.loginfo("Object grasped.")
+					rospy.loginfo("Object grasped using grasp config %d.", req.grasp_config_no)
 					reply.success = True
-					reply.message = "Object grasped."
+					reply.message = "Object grasped using grasp config " + str(req.grasp_config_no) + "."
 				else:
-					rospy.logerr("Timed out while trying to grasp an object.")
+					rospy.logerr("Timed out while trying to grasp an object using grasp config %d.", req.grasp_config_no)
 					reply.success = False
-					reply.message = "Timed out while trying to grasp an object."
+					reply.message = "Timed out while trying to grasp an object using grasp config " + str(req.grasp_config_no) + "."
 					gripper_referenced = self.check_if_referenced()
 					if not gripper_referenced:
 						rospy.logwarn("Reference the gripper before usage.")
@@ -516,7 +550,7 @@ class weiss_gripper_ieg76(object):
 						rospy.logwarn("No object to grasp.")
 						reply.message = reply.message + " No object to grasp."
 		except Exception as e:
-			rospy.logerr("weiss_gripper_ieg76.handle_grasp_jaws(): %s", e)				
+			rospy.logerr("driver.handle_grasp_jaws(): %s", e)				
 		finally:
 			log_debug_flags()
 			object_grasped_cond_var.release()		
@@ -552,7 +586,7 @@ class weiss_gripper_ieg76(object):
 					reply.success = False
 					reply.message = "Failed to acknowledge the error"
 		except Exception as e:
-			rospy.logerr("weiss_gripper_ieg76.handle_ack_error(): %s", e)
+			rospy.logerr("driver.handle_ack_error(): %s", e)
 		finally:
 			log_debug_flags()
 			fault_cond_var.release()
@@ -585,7 +619,7 @@ class weiss_gripper_ieg76(object):
 					reply.success = False
 					reply.message = "Failed to acknowledge the reference error"
 		except Exception as e:
-			rospy.logerr("weiss_gripper_ieg76.handle_ack_ref_error(): %s", e)
+			rospy.logerr("driver.handle_ack_ref_error(): %s", e)
 		finally:
 			log_debug_flags()
 			fault_cond_var.release()
@@ -628,5 +662,5 @@ class weiss_gripper_ieg76(object):
 		rospy.spin()
 
 if __name__ == "__main__":
-	driver = weiss_gripper_ieg76()
+	driver = driver()
 	driver.run()

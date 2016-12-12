@@ -2,7 +2,8 @@
 import roslib;
 import sys
 import rospy
-from std_srvs.srv import Trigger, Empty
+from std_srvs.srv import Trigger
+from weiss_gripper_ieg76.srv import ConfigTrigger
 
 def send_reference_request():
 	rospy.wait_for_service('reference')
@@ -16,11 +17,11 @@ def send_reference_request():
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
-def send_close_request():
+def send_close_request(grasp_config_no):
 	rospy.wait_for_service('close_jaws')
 	try:
-			close_jaws = rospy.ServiceProxy('close_jaws', Trigger)
-			resp = close_jaws()
+			close_jaws = rospy.ServiceProxy('close_jaws', ConfigTrigger)
+			resp = close_jaws(grasp_config_no)
 			if resp.success == True:
 				print "Success: " + resp.message
 			else:
@@ -28,11 +29,11 @@ def send_close_request():
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
-def send_grasp_object_request():
+def send_grasp_object_request(grasp_config_no):
 	rospy.wait_for_service('grasp_object')
 	try:
-			grasp_object = rospy.ServiceProxy('grasp_object', Trigger)
-			resp = grasp_object()
+			grasp_object = rospy.ServiceProxy('grasp_object', ConfigTrigger)
+			resp = grasp_object(grasp_config_no)
 			if resp.success == True:
 				print "Success: " + resp.message
 			else:
@@ -40,11 +41,11 @@ def send_grasp_object_request():
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
-def send_open_request():
+def send_open_request(grasp_config_no):
 	rospy.wait_for_service('open_jaws')
 	try:
-			open_jaws = rospy.ServiceProxy('open_jaws', Trigger)
-			resp = open_jaws()
+			open_jaws = rospy.ServiceProxy('open_jaws', ConfigTrigger)
+			resp = open_jaws(grasp_config_no)
 			if resp.success == True:
 				print "Success: " + resp.message
 			else:
@@ -85,10 +86,12 @@ def usage():
 	print "4. Grasp object"
 	print "5. Ack error"
 	print "6. Ack reference error"
-	print "7. Exit"
+	print "7. Select grasp configuration"
+	print "8. Exit"
 
 if __name__ == "__main__":
 	selected_cmd = usage()
+	grasp_config_no = 0
 	while True:
 		selected_cmd = input("Select a command to send: ")
 		if selected_cmd == 1:
@@ -96,13 +99,13 @@ if __name__ == "__main__":
 			send_reference_request()
 		elif selected_cmd == 2:
 			print "Sending open jaws request..."
-			send_open_request()
+			send_open_request(grasp_config_no)
 		elif selected_cmd == 3: 
 			print "Sending close jaws request..."
-			send_close_request()
+			send_close_request(grasp_config_no)
 		elif selected_cmd == 4: 
 			print "Sending grasp object request..."
-			send_grasp_object_request()
+			send_grasp_object_request(grasp_config_no)
 		elif selected_cmd == 5: 
 			print "Sending acknowledge error request..."
 			send_ack_error_request()
@@ -110,6 +113,9 @@ if __name__ == "__main__":
 			print "Sending acknowledge error request..."
 			send_ack_ref_error_request()
 		elif selected_cmd == 7: 
+			print "Current grasp configuration number: " + str(grasp_config_no)
+			grasp_config_no = input("Enter new grasp configuration no = ")
+		elif selected_cmd == 8: 
 			sys.exit(0)
 		else:
 			print "Unknown option entered."
