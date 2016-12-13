@@ -30,7 +30,7 @@ Follow the installation procedures described in the *Installationsguide.pdf* on 
  3. Launch the application *Device Configurator*
 
 ###Configuration
-The gripper provides 4 gripping configurations. The linux driver uses the first configuration *Griff 0*. To configure it click on the button "Parameter" and edit the values for *Griff 0*.
+The gripper provides 4 grasping configurations. The linux driver uses by default the first configuration *Griff 0* but the others can also be used. To configure it click on the button "Parameter" and edit the values for *Griff 0*.
 
 1. Launch the application *Device Configurator*
 2. Select the port allocated for the device
@@ -46,7 +46,7 @@ The gripper provides 4 gripping configurations. The linux driver uses the first 
  3. Click the button *Verbinden*
  4. Click the button *Aktivieren*
  5. Click the button *Referenzieren*
- 6. Click the buttons *Schließen* / *Öffnen* to close/open the gripper
+ 6. Click the buttons *Schließen* / *Öffnen* of the grasp configuration you would like to use to close/open the gripper
  7. Click the button *Deaktivieren*
  8. Click the button *Trennen*
 

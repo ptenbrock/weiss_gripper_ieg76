@@ -34,21 +34,7 @@
             <axis xyz="1 0 0"/>
             <limit effort="100.0" lower="-0.015" upper="0.026" velocity="100.0"/>
         </joint>
-        <link name="${prefix}finger_right">
-            <visual>
-                <geometry>
-                    <mesh filename="package://weiss_gripper_ieg76/meshes/finger.stl"/>
-                </geometry>
-                <material name="grey">
-                    <color rgba="0.5 0.5 0.5 1.0"/>
-                </material>
-            </visual>
-            <collision>
-                <geometry>
-                    <mesh filename="package://weiss_gripper_ieg76/meshes/finger.stl"/>
-                </geometry>
-            </collision>
-        </link>
+        <link name="${prefix}finger_right"/>
         <joint name="jaw_position_mimic" type="prismatic">
             <parent link="${prefix}base"/>
             <child link="${prefix}finger_left"/>
@@ -57,20 +43,6 @@
             <limit effort="100.0" lower="-0.015" upper="0.026" velocity="100.0"/>
             <mimic joint="jaw_position" multiplier="1"/>
         </joint>
-        <link name="${prefix}finger_left">
-            <visual>
-                <geometry>
-                    <mesh filename="package://weiss_gripper_ieg76/meshes/finger.stl"/>
-                </geometry>
-                <material name="grey">
-                    <color rgba="0.5 0.5 0.5 1.0"/>
-                </material>
-            </visual>
-            <collision>
-                <geometry>
-                    <mesh filename="package://weiss_gripper_ieg76/meshes/finger.stl"/>
-                </geometry>
-            </collision>
-        </link>
+        <link name="${prefix}finger_left"/>
     </xacro:macro>
 </robot>
