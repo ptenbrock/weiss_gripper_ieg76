@@ -431,8 +431,8 @@ class states_publisher(threading.Thread):
 class driver(object):
 	def __init__(self):
 		global ser
-		rospy.init_node('driver_node', log_level=rospy.DEBUG)
-		#rospy.init_node('driver_node')
+		#rospy.init_node('driver_node', log_level=rospy.DEBUG)
+		rospy.init_node('driver_node')
 		rospy.on_shutdown(self.shutdown_handler)
 		serial_port_addr = rospy.get_param("~serial_port_address", '/dev/ttyACM0')
 		ser.port = serial_port_addr
