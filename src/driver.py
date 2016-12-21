@@ -249,7 +249,7 @@ class serial_port_reader(threading.Thread):
 				rospy.logdebug("Reference event triggered")
 		finally:
 			#rospy.logdebug("serial_port_reader releasing reference_cond_var")	
-			reference_cond_var.release()	
+			reference_cond_var.release()
 
 		byte3_binary = byte3_binary >> 1
 		jaws_opened_cond_var.acquire()
@@ -406,7 +406,7 @@ class serial_port_reader(threading.Thread):
 					self.input_data_unavailable = 0
 					input_data = ser.read(ser.inWaiting())
 					data_str = input_data.decode('ascii') #read the bytes and convert from binary array to ASCII
-					if (incoming_bytes_no<>22):
+					if (incoming_bytes_no <> 22):
 						rospy.logdebug("incoming_bytes_no = %d: %s", incoming_bytes_no, data_str)
 					self.parse_incoming_data_block(data_str)
 				else:
@@ -669,7 +669,7 @@ class driver(object):
 			except SerialException as e:
 				rospy.logerr("driver.handle_close_jaws() while trying to write on the serial port: %s", e)
 			finally:
-				serial_port_lock.release()	
+				serial_port_lock.release()
 
 			jaws_closed_cond_var.wait(timeout=3.0)#always returns None for python 2
 			if current_flags_dict["CLOSED_FLAG"]:
@@ -903,7 +903,7 @@ class driver(object):
 			log_debug_flags()
 			set_param_cond_var.release()
 
-		return reply	
+		return reply
 
 	def handle_set_grasping_force(self, req):
 		rospy.loginfo("Setting the grasping force of grasp configuration number %d", req.grasp_config_no)
