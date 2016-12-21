@@ -17,15 +17,13 @@ This is the ROS package of the driver for the [Weiss Robotics gripper, model IEG
 		 6. [Ack reference error](#ack-reference-error)
 		 7. [Select grasp configuration](#select-grasp-configuration)
 		 8. [Get all the grasp configuration's param](#get-all-the-grasp-configurations-param)
-		 9. [Get the grasping force](#get-the-grasping-force)
+		 9. [Set all the grasp configuration's param](#set-all-the-grasp-configurations-param)
 		 10. [Set the grasping force](#set-the-grasping-force)
-		 11. [Get the opening position](#get-the-opening-position)
-		 12. [Set the opening position](#set-the-opening-position)
-		 13. [Get the closing position](#get-the-closing-position)
-		 14. [Set the closing position](#set-the-closing-position)
-		 15. [Exit](#exit)
-		 16. [Reconnect](#reconnect)
-		 17. [Shutdown](#shutdown)
+		 11. [Set the opening position](#set-the-opening-position)
+		 12. [Set the closing position](#set-the-closing-position)
+		 13. [Exit](#exit)
+		 14. [Reconnect](#reconnect)
+		 15. [Shutdown](#shutdown)
 
 
 ##Device Configurator in Windows
@@ -126,13 +124,11 @@ The *test_client* provides a simple menu for interacting with the gripper:
 > 6. Ack reference error
 > 7. Select grasp configuration
 > 8. Get all the grasp configuration's param
-> 9. Get the grasping force
+> 9. Set all the grasp configuration's param
 > 10. Set the grasping force
-> 11. Get the opening position
-> 12. Set the opening position
-> 13. Get the closing position
-> 14. Set the closing position
-> 15. Exit
+> 11. Set the opening position
+> 12. Set the closing position
+> 13. Exit
 > Select a command to send:
 
 ####Reference
@@ -170,20 +166,14 @@ The opening/closing positions may have values between 0.0 mm and 30.0 mm.
 ####Get all the grasp configuration's param
 This option in the test_client's menu returns all the parameters (grasping force, opening position, closing position) of the currently selected grasp configuration.
 
-####Get the grasping force
-This option in the test_client's menu returns the grasping force of the currently selected grasp configuration.
+####Set all the grasp configuration's param
+This option in the test_client's menu sets all the parameters (grasping force, opening position, closing position) of the currently selected grasp configuration.
 
 ####Set the grasping force
 Use this option in the test_client's menu to set the grasping force of the currently selected grasp configuration.
 
-####Get the opening position
-This option in the test_client's menu returns the opening position of the currently selected grasp configuration.
-
 ####Set the opening position
 Use this option in the test_client's menu to set the grasping force of the currently selected grasp configuration.
-
-####Get the closing position
-This option in the test_client's menu returns the closing position of the currently selected grasp configuration.
 
 ####Set the closing position
 Use this option in the test_client's menu to set the closing position of the currently selected grasp configuration.

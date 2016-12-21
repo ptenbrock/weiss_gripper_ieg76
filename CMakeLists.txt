@@ -56,9 +56,6 @@ add_service_files(
   FILES
   ConfigTrigger.srv
   GetAllParam.srv
-  GetClosingPos.srv
-  GetGraspingForce.srv
-  GetOpeningPos.srv
   SetAllParam.srv
   SetClosingPos.srv
   SetGraspingForce.srv

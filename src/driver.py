@@ -6,7 +6,6 @@ import serial
 import rospy
 import threading
 import diagnostic_updater
-import math
 from serial import SerialException
 from std_srvs.srv import Trigger, TriggerResponse
 from weiss_gripper_ieg76.srv import *
@@ -26,7 +25,7 @@ object_grasped_cond_var = threading.Condition(flags_lock)
 fault_cond_var = threading.Condition(flags_lock)
 get_all_param_cond_var = threading.Condition()
 get_single_param_cond_var = threading.Condition()
-set_single_param_cond_var = threading.Condition()
+set_param_cond_var = threading.Condition()
 
 current_flags_dict = {"POS":0.0, "OPEN_FLAG":0b0, "CLOSED_FLAG":0b0, "HOLDING_FLAG":0b0, "FAULT_FLAG":0b0, "IDLE_FLAG":0b0, "TEMPFAULT_FLAG":0b0, "TEMPWARN_FLAG":0b0, "MAINT_FLAG":0b0}
 old_flags_dict = {"POS":0.0, "OPEN_FLAG":0b0, "CLOSED_FLAG":0b0, "HOLDING_FLAG":0b0, "FAULT_FLAG":0b0, "IDLE_FLAG":0b0, "TEMPFAULT_FLAG":0b0, "TEMPWARN_FLAG":0b0, "MAINT_FLAG":0b0}
@@ -77,13 +76,30 @@ def create_send_payload(command, grasp_config_no = 0, grasping_force = 100, open
 		send_cmd = "GETPARAM(" + str(grasp_index) + ", 3)\n"
 	elif command == "set_all_param":
 		grasp_index = 96 + grasp_config_no
+		grasping_force_hex = hex(grasping_force)[2:]
+		opening_position = round(opening_position, 2)
+		opening_pos = int(opening_position*100)
+		opening_pos_hex = hex(opening_pos)[2:]
+		opening_pos_hex_byte0 = opening_pos_hex[:-2]
+		if not opening_pos_hex_byte0:
+			opening_pos_hex_byte0 = hex(0)[:-2]
+		opening_pos_hex_byte1 = opening_pos_hex[-2:]
+		closing_position = round(closing_position, 2)
+		closing_pos = int(closing_position * 100)
+		closing_pos_hex = hex(closing_pos)[2:]
+		closing_pos_hex_byte0 = closing_pos_hex[:-2]
+		if not closing_pos_hex_byte0:
+			closing_pos_hex_byte0 = hex(0)[:-2]
+		closing_pos_hex_byte1 = closing_pos_hex[-2:]
+		send_cmd = "SETPARAM(" + str(grasp_index) + ", 0, [" + closing_pos_hex_byte0[0:2] + "," + closing_pos_hex_byte1[0:2] + "," + opening_pos_hex_byte0[0:2] + "," + opening_pos_hex_byte1[0:2] + "," + grasping_force_hex + "])\n"
 	elif command == "set_grasping_force":
 		grasp_index = 96 + grasp_config_no
 		grasping_force_hex = hex(grasping_force)[2:]
 		send_cmd = "SETPARAM(" + str(grasp_index) + ", 3, [" + grasping_force_hex + "])\n"
 	elif command == "set_opening_position":
 		grasp_index = 96 + grasp_config_no
-		opening_pos = int(math.ceil(opening_position * 100))
+		opening_position = round(opening_position, 2)
+		opening_pos = int(opening_position * 100)
 		opening_pos_hex = hex(opening_pos)[2:]
 		opening_pos_hex_byte0 = opening_pos_hex[:-2]
 		if not opening_pos_hex_byte0:
@@ -92,7 +108,8 @@ def create_send_payload(command, grasp_config_no = 0, grasping_force = 100, open
 		send_cmd = "SETPARAM(" + str(grasp_index) + ", 2, [" + opening_pos_hex_byte0[0:2] + "," + opening_pos_hex_byte1[0:2] + "])\n"
 	elif command == "set_closing_position":
 		grasp_index = 96 + grasp_config_no
-		closing_pos = int(math.ceil(closing_position * 100))
+		closing_position = round(closing_position, 2)
+		closing_pos = int(closing_position * 100)
 		closing_pos_hex = hex(closing_pos)[2:]
 		closing_pos_hex_byte0 = closing_pos_hex[:-2]
 		if not closing_pos_hex_byte0:
@@ -121,21 +138,26 @@ def create_send_payload(command, grasp_config_no = 0, grasping_force = 100, open
 
 class serial_port_reader(threading.Thread):
 	def __init__(self):
-		self.flags_msg_length = 22
-		self.get_all_param_msg_length = 33
-		self.get_positions_param_msg_length = 24
-		self.get_grasping_force_param_msg_length = 21
-		self.set_single_param_msg_length = 20
+		self.flags_msg_length = 21
+		self.get_all_param_msg_length = 32
+		self.get_positions_param_msg_length = 23
+		self.get_grasping_force_param_msg_length = 20
+		self.set_single_param_msg_length = 19
+		self.input_data_unavailable = 0
 		threading.Thread.__init__(self)
 
-	def ack_set_single_param(self, read_data_hexstr):
-		set_single_param_cond_var.acquire()
-		read_data = read_data_hexstr[:-8]
+	def ack_set_param(self, read_data_hexstr):
+		set_param_cond_var.acquire()
+		read_data = read_data_hexstr[0:12]
 		if read_data == "FIN SETPARAM":
 			global grasp_config
+			grasp_config_no_hex = read_data_hexstr[13:15]
+			grasp_config_no = int(grasp_config_no_hex, 16)
+			grasp_config_no = grasp_config_no - 150
+			grasp_config["grasp_config_no"] = grasp_config_no
 			grasp_config["fresh"] = True
-			set_single_param_cond_var.notify()
-		set_single_param_cond_var.release()
+			set_param_cond_var.notify()
+		set_param_cond_var.release()
 
 	def extract_get_all_param(self, read_data_hexstr):
 		get_all_param_cond_var.acquire()
@@ -302,6 +324,7 @@ class serial_port_reader(threading.Thread):
 				ser.open()
 				ser.flushInput()
 				ser.flushOutput()
+				time.sleep(.1)
 				is_serial_port_opened = True
 			except Exception as e:
 				is_serial_port_opened = False
@@ -310,63 +333,89 @@ class serial_port_reader(threading.Thread):
 				time.sleep(1)
 		rospy.loginfo("Serial port opened: %s", is_serial_port_opened)
 
-		rospy.loginfo("Query")
+		rospy.loginfo("Reinitializing...")
+		rospy.logdebug("Query")
 		payload = create_send_payload("query")
 		try:
 			ser.write(payload)
 			time.sleep(0.5)
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Fallback")
+			rospy.logdebug("Fallback")
 			payload = create_send_payload("fallback")
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Mode")
+			rospy.logdebug("Mode")
 			payload = create_send_payload("mode")
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Restart")
+			rospy.logdebug("Restart")
 			payload = create_send_payload("restart")
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Operate")
+			rospy.logdebug("Operate")
 			payload = create_send_payload("operate")
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Reset flags")
+			rospy.logdebug("Reset flags")
 			payload = create_send_payload("reset")
 			ser.write(payload)
 			time.sleep(0.5)
+			self.input_data_unavailable = 0
+			rospy.loginfo("Ready to receive requests.")
 		except Exception as e:
 			rospy.logerr("Error reading from the serial port while reconnect: %s", e)
 
+	def parse_incoming_data_block(self, read_data_hexstr):
+		incoming_msgs = read_data_hexstr.splitlines()#returns a list of incoming messages without the line break "\n"
+		for msg in incoming_msgs:
+			if len(msg) == self.flags_msg_length:
+				self.extract_flags(msg)
+			elif len(msg) == self.get_all_param_msg_length:
+				self.extract_get_all_param(msg)
+			elif len(msg) == self.get_positions_param_msg_length:
+				self.extract_opening_closing_position(msg)
+			elif len(msg) == self.get_grasping_force_param_msg_length:
+				self.extract_grasping_force(msg)
+			elif len(msg) == self.set_single_param_msg_length:
+				self.ack_set_param(msg)
+
 	def run(self):
+		rospy.logdebug("serial_port_reader.run()")
 		#read from port
 		connection_errors_no = 0
 		incoming_bytes_no = 0
-		
-		while (not shutdown_driver) and ser.isOpen():
+
+		#first incoming msg-block contains start-up msgs and should not be parsed
+		if (not shutdown_driver) and ser.isOpen():
 			try:
 				incoming_bytes_no = ser.inWaiting()
 				
 				if (incoming_bytes_no>0): #if incoming bytes are waiting to be read from the serial input buffer
 					input_data = ser.read(ser.inWaiting())
 					data_str = input_data.decode('ascii') #read the bytes and convert from binary array to ASCII
-					
-					if incoming_bytes_no == self.flags_msg_length:
-						self.extract_flags(data_str)
-					elif incoming_bytes_no == self.get_all_param_msg_length:
-						self.extract_get_all_param(data_str)
-					elif incoming_bytes_no == self.get_positions_param_msg_length:
-						self.extract_opening_closing_position(data_str)
-					elif incoming_bytes_no == self.get_grasping_force_param_msg_length:
-						self.extract_grasping_force(data_str)
-					elif incoming_bytes_no == self.set_single_param_msg_length:
-						self.ack_set_single_param(data_str)
-					else:
-						rospy.logdebug("incoming_bytes_no = %d: %s",incoming_bytes_no, data_str)
+					rospy.logdebug("incoming_bytes_no = %d: %s", incoming_bytes_no, data_str)
 			except Exception as e:
-				rospy.logerr("serial_port_reader.run(): %s", e)
+				rospy.logerr("serial_port_reader.run() - inside if statement: %s", e)
+		
+		#parse the subsequent reads
+		while (not shutdown_driver) and ser.isOpen():
+			try:
+				incoming_bytes_no = ser.inWaiting()
+				if (incoming_bytes_no>0): #if incoming bytes are waiting to be read from the serial input buffer
+					self.input_data_unavailable = 0
+					input_data = ser.read(ser.inWaiting())
+					data_str = input_data.decode('ascii') #read the bytes and convert from binary array to ASCII
+					if (incoming_bytes_no<>22):
+						rospy.logdebug("incoming_bytes_no = %d: %s", incoming_bytes_no, data_str)
+					self.parse_incoming_data_block(data_str)
+				else:
+					self.input_data_unavailable+=1
+					time.sleep(0.1)
+					if(self.input_data_unavailable>50):
+						rospy.logerr("No data received from the gripper. Unplug and replug the usb-cable.")	
+			except Exception as e:
+				rospy.logerr("serial_port_reader.run() - inside while statement: %s", e)
 				connection_errors_no += 1
 				if(connection_errors_no > 5):
 					connection_errors_no = 0 #reset the counter
@@ -443,6 +492,7 @@ class driver(object):
 				ser.open()
 				ser.flushInput()
 				ser.flushOutput()
+				time.sleep(.1)
 				is_serial_port_opened = True
 			except Exception as e:
 				is_serial_port_opened = False
@@ -462,20 +512,16 @@ class driver(object):
 		serv_ack_ref_error = rospy.Service('ack_ref_error', Trigger, self.handle_ack_ref_error)
 		serv_get_all_param = rospy.Service('get_all_param', GetAllParam, self.handle_get_all_param)
 		serv_set_all_param = rospy.Service('set_all_param', SetAllParam, self.handle_set_all_param)
-		serv_get_grasping_force = rospy.Service('get_grasping_force', GetGraspingForce, self.handle_get_grasping_force)
 		serv_set_grasping_force = rospy.Service('set_grasping_force', SetGraspingForce, self.handle_set_grasping_force)
-		serv_get_opening_pos = rospy.Service('get_opening_pos', GetOpeningPos, self.handle_get_opening_position)
 		serv_set_opening_pos = rospy.Service('set_opening_pos', SetOpeningPos, self.handle_set_opening_position)
-		serv_get_closing_pos = rospy.Service('get_closing_pos', GetClosingPos, self.handle_get_closing_position)
 		serv_set_closing_pos = rospy.Service('set_closing_pos', SetClosingPos, self.handle_set_closing_position)
 
 		self.serial_port_reader_thread = serial_port_reader()
 		self.states_publisher_thread = states_publisher(0.8)
 
-		rospy.loginfo("Ready to receive requests.")
-
 	def initialize_gripper(self):
-		rospy.loginfo("Query")
+		rospy.loginfo("Initializing...")
+		rospy.logdebug("Query")
 		payload = create_send_payload("query")
 		serial_port_lock.acquire()
 		try:
@@ -483,23 +529,23 @@ class driver(object):
 			time.sleep(0.5)
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Fallback")
+			rospy.logdebug("Fallback")
 			payload = create_send_payload("fallback")
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Mode")
+			rospy.logdebug("Mode")
 			payload = create_send_payload("mode")
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Restart")
+			rospy.logdebug("Restart")
 			payload = create_send_payload("restart")
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Operate")
+			rospy.logdebug("Operate")
 			payload = create_send_payload("operate")
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Reset flags")
+			rospy.logdebug("Reset flags")
 			payload = create_send_payload("reset")
 			ser.write(payload)
 			time.sleep(0.5)
@@ -810,20 +856,22 @@ class driver(object):
 		return reply
 
 	def handle_set_all_param(self, req):
-		return None	
-
-	def handle_get_grasping_force(self, req):
-		rospy.loginfo("Getting the grasping force of grasp configuration number %d", req.grasp_config_no)
-		try:
-			reply = GetGraspingForceResponse()
-			payload = create_send_payload("get_grasping_force", req.grasp_config_no)
-		except ValueError as e:
-			rospy.logerr("driver.handle_get_grasping_force(): %s", e)
+		rospy.loginfo("Setting all the parameters of grasp configuration number %d", req.grasp_config_no)
+		reply = SetAllParamResponse()
+		if req.grasping_force<0 or req.grasping_force>100:
+			rospy.logerr("driver.handle_set_all_param(): invalid force value %d", req.grasping_force)
 			reply.success = False
-			reply.message = "Failed to get the grasping force because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
+			reply.message = "Failed to set the grasping force because the invalid force value " + str(req.grasping_force) + " was given. Valid grasping force values are 0..100%"
 			return reply
-		
-		get_single_param_cond_var.acquire()
+		try:
+			payload = create_send_payload("set_all_param", req.grasp_config_no, req.grasping_force, req.opening_position, req.closing_position)
+		except ValueError as e:
+			rospy.logerr("driver.handle_set_all_param(): %s", e)
+			reply.success = False
+			reply.message = "Failed to set all the parameters because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
+			return reply
+
+		set_param_cond_var.acquire()
 		global grasp_config
 		grasp_config["fresh"] = False
 		try:
@@ -837,23 +885,25 @@ class driver(object):
 			finally:
 				serial_port_lock.release()
 
-				get_single_param_cond_var.wait(timeout=3.0)
+				set_param_cond_var.wait(timeout=3.0)
 				if grasp_config["fresh"] == True:
-					rospy.loginfo("Got the grasping force of grasp config %d.", grasp_config["grasp_config_no"])
-					reply.grasping_force = grasp_config["grasping_force"]
+					rospy.loginfo("Set all the param (grasping force %d, opening position %f, closing position %f) of grasp config %d.",  req.grasping_force, round(req.opening_position, 2), round(req.closing_position, 2), grasp_config["grasp_config_no"])
+					grasp_config["grasping_force"] = req.grasping_force
+					grasp_config["opening_position"] = req.opening_position
+					grasp_config["closing_position"] = req.closing_position
 					reply.success = True
-					reply.message = "Got the grasping force of grasp config " + str(grasp_config["grasp_config_no"]) + "."
+					reply.message = "Set all the param (grasping force " + str(req.grasping_force) + ", opening position " + str(round(req.opening_position, 2)) + ", closing position " + str(round(req.closing_position, 2)) + ") of grasp config " + str(grasp_config["grasp_config_no"]) + "."
 				else:
-					rospy.logerr("Timed out while trying to get the grasping force of grasp config %d.", req.grasp_config_no)
+					rospy.logerr("Timed out while trying to set all the parameters (grasping force %d, opening position %f, closing position %f) of grasp config %d.",  req.grasping_force, round(req.opening_position, 2), round(req.closing_position, 2), req.grasp_config_no)
 					reply.success = False
-					reply.message = "Timed out while trying to get the grasping force of grasp config " + str(req.grasp_config_no) + "."
+					reply.message = "Timed out while trying to set all the param (grasping force " + str(req.grasping_force) + ", opening position " + str(round(req.opening_position, 2)) + ", closing position " + str(round(req.closing_position, 2)) + ") of grasp config " + str(req.grasp_config_no) + "."
 		except Exception as e:
-			rospy.logerr("driver.handle_get_grasping_force(): %s", e)
+			rospy.logerr("driver.handle_set_all_param(): %s", e)
 		finally:
 			log_debug_flags()
-			get_single_param_cond_var.release()
+			set_param_cond_var.release()
 
-		return reply
+		return reply	
 
 	def handle_set_grasping_force(self, req):
 		rospy.loginfo("Setting the grasping force of grasp configuration number %d", req.grasp_config_no)
@@ -871,7 +921,7 @@ class driver(object):
 			reply.message = "Failed to set the grasping force because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
 			return reply
 
-		set_single_param_cond_var.acquire()
+		set_param_cond_var.acquire()
 		global grasp_config
 		grasp_config["fresh"] = False
 		try:
@@ -885,9 +935,9 @@ class driver(object):
 			finally:
 				serial_port_lock.release()
 
-				set_single_param_cond_var.wait(timeout=3.0)
+				set_param_cond_var.wait(timeout=3.0)
 				if grasp_config["fresh"] == True:
-					rospy.loginfo("Set the grasping force %d of grasp config %d.",  req.grasping_force, req.grasp_config_no)
+					rospy.loginfo("Set the grasping force %d of grasp config %d.",  req.grasping_force, grasp_config["grasp_config_no"])
 					grasp_config["grasping_force"] = req.grasping_force
 					reply.success = True
 					reply.message = "Set the grasping force " + str(req.grasping_force) + " of grasp config " + str(grasp_config["grasp_config_no"]) + "."
@@ -899,50 +949,7 @@ class driver(object):
 			rospy.logerr("driver.handle_set_grasping_force(): %s", e)
 		finally:
 			log_debug_flags()
-			set_single_param_cond_var.release()
-
-		return reply
-
-	def handle_get_opening_position(self, req):
-		rospy.loginfo("Getting the opening position of grasp configuration number %d", req.grasp_config_no)
-		try:
-			reply = GetOpeningPosResponse()
-			payload = create_send_payload("get_opening_position", req.grasp_config_no)
-		except ValueError as e:
-			rospy.logerr("driver.handle_get_opening_position(): %s", e)
-			reply.success = False
-			reply.message = "Failed to get the opening position because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
-			return reply
-		
-		get_single_param_cond_var.acquire()
-		global grasp_config
-		grasp_config["fresh"] = False
-		try:
-			log_debug_flags()
-
-			try:
-				serial_port_lock.acquire()
-				ser.write(payload)
-			except SerialException as e:
-				rospy.logerr("Error while writing on the serial port: %s", e)
-			finally:
-				serial_port_lock.release()
-
-				get_single_param_cond_var.wait(timeout=3.0)
-				if grasp_config["fresh"] == True:
-					rospy.loginfo("Got the opening position of grasp config %d.", grasp_config["grasp_config_no"])
-					reply.opening_position = grasp_config["opening_position"]
-					reply.success = True
-					reply.message = "Got the opening position of grasp config " + str(grasp_config["grasp_config_no"]) + "."
-				else:
-					rospy.logerr("Timed out while trying to get the opening position of grasp config %d.", req.grasp_config_no)
-					reply.success = False
-					reply.message = "Timed out while trying to get the opening position of grasp config " + str(req.grasp_config_no) + "."
-		except Exception as e:
-			rospy.logerr("driver.handle_get_opening_position(): %s", e)
-		finally:
-			log_debug_flags()
-			get_single_param_cond_var.release()
+			set_param_cond_var.release()
 
 		return reply
 
@@ -962,7 +969,7 @@ class driver(object):
 			reply.message = "Failed to set the opening position because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
 			return reply
 
-		set_single_param_cond_var.acquire()
+		set_param_cond_var.acquire()
 		global grasp_config
 		grasp_config["fresh"] = False
 		try:
@@ -976,64 +983,21 @@ class driver(object):
 			finally:
 				serial_port_lock.release()
 
-				set_single_param_cond_var.wait(timeout=3.0)
+				set_param_cond_var.wait(timeout=3.0)
 				if grasp_config["fresh"] == True:
-					rospy.loginfo("Set the opening position %f of grasp config %d.",  req.opening_position, req.grasp_config_no)
+					rospy.loginfo("Set the opening position %f of grasp config %d.",  round(req.opening_position, 2), grasp_config["grasp_config_no"])
 					grasp_config["opening_position"] = req.opening_position
 					reply.success = True
-					reply.message = "Set the opening position " + str(req.opening_position) + " of grasp config " + str(grasp_config["grasp_config_no"]) + "."
+					reply.message = "Set the opening position " + str(round(req.opening_position, 2)) + " of grasp config " + str(grasp_config["grasp_config_no"]) + "."
 				else:
-					rospy.logerr("Timed out while trying to set the opening position %f of grasp config %d.", req.opening_position, req.grasp_config_no)
+					rospy.logerr("Timed out while trying to set the opening position %f of grasp config %d.", round(req.opening_position, 2), req.grasp_config_no)
 					reply.success = False
-					reply.message = "Timed out while trying to set the opening position " +  str(req.opening_position) + " of grasp config " + str(req.grasp_config_no) + "."
+					reply.message = "Timed out while trying to set the opening position " +  str(round(req.opening_position, 2)) + " of grasp config " + str(req.grasp_config_no) + "."
 		except Exception as e:
 			rospy.logerr("driver.handle_set_opening_position(): %s", e)
 		finally:
 			log_debug_flags()
-			set_single_param_cond_var.release()
-
-		return reply
-
-	def handle_get_closing_position(self, req):
-		rospy.loginfo("Getting the closing position of grasp configuration number %d", req.grasp_config_no)
-		try:
-			reply = GetClosingPosResponse()
-			payload = create_send_payload("get_closing_position", req.grasp_config_no)
-		except ValueError as e:
-			rospy.logerr("driver.handle_get_closing_position(): %s", e)
-			reply.success = False
-			reply.message = "Failed to get the closing position because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
-			return reply
-		
-		get_single_param_cond_var.acquire()
-		global grasp_config
-		grasp_config["fresh"] = False
-		try:
-			log_debug_flags()
-
-			try:
-				serial_port_lock.acquire()
-				ser.write(payload)
-			except SerialException as e:
-				rospy.logerr("Error while writing on the serial port: %s", e)
-			finally:
-				serial_port_lock.release()
-
-				get_single_param_cond_var.wait(timeout=3.0)
-				if grasp_config["fresh"] == True:
-					rospy.loginfo("Got the closing position of grasp config %d.", grasp_config["grasp_config_no"])
-					reply.closing_position = grasp_config["closing_position"]
-					reply.success = True
-					reply.message = "Got the closing position of grasp config " + str(grasp_config["grasp_config_no"]) + "."
-				else:
-					rospy.logerr("Timed out while trying to get the closing position of grasp config %d.", req.grasp_config_no)
-					reply.success = False
-					reply.message = "Timed out while trying to get the closing position of grasp config " + str(req.grasp_config_no) + "."
-		except Exception as e:
-			rospy.logerr("driver.handle_get_closing_position(): %s", e)
-		finally:
-			log_debug_flags()
-			get_single_param_cond_var.release()
+			set_param_cond_var.release()
 
 		return reply
 
@@ -1053,7 +1017,7 @@ class driver(object):
 			reply.message = "Failed to set the closing position because the invalid grasp configuration number " + str(req.grasp_config_no) + " was given. Valid grasp configuration numbers are 0, 1, 2, 3."
 			return reply
 
-		set_single_param_cond_var.acquire()
+		set_param_cond_var.acquire()
 		global grasp_config
 		grasp_config["fresh"] = False
 		try:
@@ -1067,21 +1031,21 @@ class driver(object):
 			finally:
 				serial_port_lock.release()
 
-				set_single_param_cond_var.wait(timeout=3.0)
+				set_param_cond_var.wait(timeout=3.0)
 				if grasp_config["fresh"] == True:
-					rospy.loginfo("Set the closing position %f of grasp config %d.",  req.closing_position, req.grasp_config_no)
+					rospy.loginfo("Set the closing position %f of grasp config %d.",  round(req.closing_position), grasp_config["grasp_config_no"])
 					grasp_config["closing_position"] = req.closing_position
 					reply.success = True
-					reply.message = "Set the closing position " + str(req.closing_position) + " of grasp config " + str(grasp_config["grasp_config_no"]) + "."
+					reply.message = "Set the closing position " + str(round(req.closing_position, 2)) + " of grasp config " + str(grasp_config["grasp_config_no"]) + "."
 				else:
-					rospy.logerr("Timed out while trying to set the closing position %f of grasp config %d.", req.closing_position, req.grasp_config_no)
+					rospy.logerr("Timed out while trying to set the closing position %f of grasp config %d.", round(req.closing_position, 2), req.grasp_config_no)
 					reply.success = False
-					reply.message = "Timed out while trying to set the closing position " +  str(req.closing_position) + " of grasp config " + str(req.grasp_config_no) + "."
+					reply.message = "Timed out while trying to set the closing position " +  str(round(req.closing_position, 2)) + " of grasp config " + str(req.grasp_config_no) + "."
 		except Exception as e:
 			rospy.logerr("driver.handle_set_closing_position(): %s", e)
 		finally:
 			log_debug_flags()
-			set_single_param_cond_var.release()
+			set_param_cond_var.release()
 
 		return reply
 
@@ -1092,16 +1056,16 @@ class driver(object):
 		payload = create_send_payload("deactivate")
 
 		try:
-			rospy.loginfo("Deactivate.")
+			rospy.logdebug("Deactivate.")
 			serial_port_lock.acquire()
 			ser.write(payload)
 			time.sleep(0.5)
-			rospy.loginfo("Fallback.")
+			rospy.logdebug("Fallback.")
 			payload = create_send_payload("fallback")
 			ser.write(payload)
 			time.sleep(0.5)
 			if ser.isOpen():
-				rospy.loginfo("Close port.")
+				rospy.logdebug("Close port.")
 				ser.close()
 		except SerialException as e:
 			rospy.logerr("Error closing the serial port: %s", e)
@@ -1113,11 +1077,13 @@ class driver(object):
 		self.serial_port_reader_thread.daemon = True
 		self.states_publisher_thread.daemon = True
 
-		rospy.loginfo("Starting threads...")
+		rospy.logdebug("Starting threads...")
 		self.serial_port_reader_thread.start()
 		self.states_publisher_thread.start()
-		rospy.loginfo("Threads started.")
+		rospy.logdebug("Threads started.")
 		
+		rospy.loginfo("Ready to receive requests.")
+
 		rospy.spin()
 
 if __name__ == "__main__":

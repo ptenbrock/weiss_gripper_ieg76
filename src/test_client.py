@@ -85,34 +85,21 @@ def get_all_param_request(grasp_config_no):
 			resp = get_all_param(grasp_config_no)
 			if resp.success == True:
 				print "Success: " + resp.message
-				print "grasping_force: " + str(resp.grasping_force)
-				print "opening_position: " + str(math.ceil(resp.opening_position*100)/float(100))
-				print "closing_position: " + str(math.ceil(resp.closing_position*100)/float(100))
+				print "grasping_force: " + str(resp.grasping_force) + " [%]"
+				print "opening_position: " + str(round(resp.opening_position, 2)) + " [mm]"
+				print "closing_position: " + str(round(resp.closing_position, 2)) + " [mm]"
 			else:
 				print "Failure: " + resp.message
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
-def set_all_param_request(grasp_config_no):
+def set_all_param_request(grasp_config_no, grasping_force, opening_position, closing_position):
 	rospy.wait_for_service('set_all_param')
 	try:
 			set_all_param = rospy.ServiceProxy('set_all_param', SetAllParam)
-			resp = set_all_param(grasp_config_no)
+			resp = set_all_param(grasp_config_no, grasping_force, opening_position, closing_position)
 			if resp.success == True:
 				print "Success: " + resp.message
-			else:
-				print "Failure: " + resp.message
-	except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
-
-def get_grasping_force_request(grasp_config_no):
-	rospy.wait_for_service('get_grasping_force')
-	try:
-			get_grasping_force = rospy.ServiceProxy('get_grasping_force', GetGraspingForce)
-			resp = get_grasping_force(grasp_config_no)
-			if resp.success == True:
-				print "Success: " + resp.message
-				print "grasping_force: " + str(resp.grasping_force)
 			else:
 				print "Failure: " + resp.message
 	except rospy.ServiceException, e:
@@ -130,19 +117,6 @@ def set_grasping_force_request(grasp_config_no, grasping_force):
 	except rospy.ServiceException, e:
 			print "Service call failed: %s"%e
 
-def get_opening_pos_request(grasp_config_no):
-	rospy.wait_for_service('get_opening_pos')
-	try:
-			get_opening_pos = rospy.ServiceProxy('get_opening_pos', GetOpeningPos)
-			resp = get_opening_pos(grasp_config_no)
-			if resp.success == True:
-				print "Success: " + resp.message
-				print "opening_position: " + str(math.ceil(resp.opening_position*100)/float(100))
-			else:
-				print "Failure: " + resp.message
-	except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
-
 def set_opening_pos_request(grasp_config_no, opening_position):
 	rospy.wait_for_service('set_opening_pos')
 	try:
@@ -150,19 +124,6 @@ def set_opening_pos_request(grasp_config_no, opening_position):
 			resp = set_opening_pos(grasp_config_no, opening_position)
 			if resp.success == True:
 				print "Success: " + resp.message
-			else:
-				print "Failure: " + resp.message
-	except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
-
-def get_closing_pos_request(grasp_config_no):
-	rospy.wait_for_service('get_closing_pos')
-	try:
-			get_closing_pos = rospy.ServiceProxy('get_closing_pos', GetClosingPos)
-			resp = get_closing_pos(grasp_config_no)
-			if resp.success == True:
-				print "Success: " + resp.message
-				print "closing_position: " + str(math.ceil(resp.closing_position*100)/float(100))
 			else:
 				print "Failure: " + resp.message
 	except rospy.ServiceException, e:
@@ -190,13 +151,11 @@ def usage():
 	print "6. Ack reference error"
 	print "7. Select grasp configuration"
 	print "8. Get all the grasp configuration's param"
-	print "9. Get the grasping force"
+	print "9. Set all the grasp configuration's param"
 	print "10. Set the grasping force"
-	print "11. Get the opening position"
-	print "12. Set the opening position"
-	print "13. Get the closing position"
-	print "14. Set the closing position"
-	print "15. Exit"
+	print "11. Set the opening position"
+	print "12. Set the closing position"
+	print "13. Exit"
 
 if __name__ == "__main__":
 	selected_cmd = usage()
@@ -232,8 +191,19 @@ if __name__ == "__main__":
 			print "Getting all the parameters (grasping force, opening position, closing position) of grasp configuration number " + str(grasp_config_no) + "..."
 			get_all_param_request(grasp_config_no)
 		elif selected_cmd == 9: 
-			print "Getting the grasping force of grasp configuration number " + str(grasp_config_no) + "..."
-			get_grasping_force_request(grasp_config_no)
+			print "Setting all the parameters (grasping force, opening position, closing position) of grasp configuration number " + str(grasp_config_no) + "..."
+			input_data_grasping_force = input("Enter the grasping force (0..100%) of grasp config no " + str(grasp_config_no) + " = ")
+			input_data_opening_position = input("Enter the opening position of grasp config no " + str(grasp_config_no) + " = ")
+			input_data_closing_position = input("Enter the closing position of grasp config no " + str(grasp_config_no) + " = ")
+			if input_data_grasping_force <0 or input_data_grasping_force >100:
+				print "Value error " + str(input_data_grasping_force) + ". Valid grasping force values are 0..100%."
+			elif input_data_opening_position <0.0 and input_data_opening_position >30.0:
+				print "Value error " + str(input_data_opening_position) + ". Valid opening position values are 0.0..30.0 mm."
+			elif input_data_closing_position <0.0 and input_data_closing_position >30.0:
+				print "Value error " + str(input_data_closing_position) + ". Valid closing position values are 0.0..30.0 mm."
+			else:
+				print "Setting all the param (grasping force " + str(input_data_grasping_force) + " [%], opening position " + str(input_data_opening_position) + " [mm], closing position " + str(input_data_closing_position) + " [mm]) of grasp config " + str(grasp_config_no) + "."
+				set_all_param_request(grasp_config_no, input_data_grasping_force, input_data_opening_position, input_data_closing_position)
 		elif selected_cmd == 10:
 			input_data = input("Enter the grasping force (0..100%) of grasp config no " + str(grasp_config_no) + " = ")
 			if input_data >=0 and input_data <=100:
@@ -241,27 +211,21 @@ if __name__ == "__main__":
 				set_grasping_force_request(grasp_config_no, input_data)
 			else:
 				print "Value error " + str(input_data) + ". Valid grasping force values are 0..100%." 
-		elif selected_cmd == 11: 
-			print "Getting the opening position of grasp configuration number " + str(grasp_config_no) + "..."
-			get_opening_pos_request(grasp_config_no)
-		elif selected_cmd == 12:
+		elif selected_cmd == 11:
 			input_data = input("Enter the opening position of grasp config no " + str(grasp_config_no) + " = ")
 			if input_data >=0.0 and input_data <=30.0:
 				print "Setting the opening position of grasp configuration number " + str(grasp_config_no) + "..."
 				set_opening_pos_request(grasp_config_no, input_data)
 			else:
 				print "Value error " + str(input_data) + ". Valid opening position values are 0.0..30.0 mm."
-		elif selected_cmd == 13: 
-			print "Getting the closing position of grasp configuration number " + str(grasp_config_no) + "..."
-			get_closing_pos_request(grasp_config_no)
-		elif selected_cmd == 14: 
+		elif selected_cmd == 12: 
 			input_data = input("Enter the closing position of grasp config no " + str(grasp_config_no) + " = ")
 			if input_data >=0.0 and input_data <=30.0:
 				print "Setting the closing position of grasp configuration number " + str(grasp_config_no) + "..."
 				set_closing_pos_request(grasp_config_no, input_data)
 			else:
 				print "Value error " + str(input_data) + ". Valid closing position values are 0.0..30.0 mm."
-		elif selected_cmd == 15:
+		elif selected_cmd == 13:
 			print "Exiting the test_client..."
 			sys.exit(0)
 		else:
