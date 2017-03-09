@@ -24,7 +24,7 @@ This is the ROS package of the driver for the [Weiss Robotics gripper, model IEG
 		 13. [Exit](#exit)
 		 14. [Reconnect](#reconnect)
 		 15. [Shutdown](#shutdown)
-
+ 3. [Acknowledgements](#acknowledgements)
 
 ##Device Configurator in Windows
 The gripper comes with a CD containing the application *Device Configurator* that can be installed and used in Windows to configure and test the gripper.
@@ -186,3 +186,15 @@ The driver will automatically try to reconnect to the serial port if it detects 
 
 ####Shutdown
 To shutdown the driver switch to the terminal where the driver is running and press *Ctrl + C*.  The driver will gracefully shutdown. 
+
+## Acknowledgements
+This project is a result of the LIAA project.
+http://www.project-leanautomation.eu/
+
+![LIAA](http://www.project-leanautomation.eu/fileadmin/img/LIAALogo/Logo_LIAA.png "LIAA")
+
+![EC](http://www.project-leanautomation.eu/typo3temp/pics/b3ba71db31.jpg "EC")
+
+LIAA received funding from the European Union’s Seventh Framework Programme for research, technological development and demonstration under grant agreement no. 608604.
+
+Project runtime: 02.09.2013 – 31.08.2017.
