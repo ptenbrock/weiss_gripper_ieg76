@@ -3,7 +3,7 @@
     <xacro:property name="base_x" value="0.060"/>
     <xacro:property name="base_y" value="0.071"/>
     <xacro:property name="base_z" value="0.062"/>
-   
+
     <xacro:macro name="ieg76" params="parent prefix *origin">
         <joint name="${prefix}mount" type="fixed">
             <insert_block name="origin"/>
@@ -44,5 +44,15 @@
             <mimic joint="jaw_position" multiplier="1"/>
         </joint>
         <link name="${prefix}finger_left"/>
+
+        <joint name="${prefix}center" type="fixed">
+            <parent link="${parent}"/>
+            <child link="${prefix}center"/>
+            <origin rpy="0 0 0" xyz="0 0 ${base_z}"/>
+        </joint>
+
+        <link name="${prefix}center">
+        </link>
+
     </xacro:macro>
 </robot>
