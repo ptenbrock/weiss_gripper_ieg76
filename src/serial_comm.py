@@ -20,36 +20,6 @@ def create_send_payload(command, grasping_force = 100, opening_position = 29.50,
 		send_cmd = "PDOUT=[02," + grasp_index + "]\n"
 	elif command == "close":
 		send_cmd = "PDOUT=[03," + grasp_index + "]\n"
-	elif command == "get_all_param":
-		grasp_index = 96 + grasp_config_no
-		send_cmd = "GETPARAM(" + str(grasp_index) + ", 0)\n"
-	elif command == "get_closing_position":
-		grasp_index = 96 + grasp_config_no
-		send_cmd = "GETPARAM(" + str(grasp_index) + ", 1)\n"
-	elif command == "get_opening_position":
-		grasp_index = 96 + grasp_config_no
-		send_cmd = "GETPARAM(" + str(grasp_index) + ", 2)\n"
-	elif command == "get_grasping_force":
-		grasp_index = 96 + grasp_config_no
-		send_cmd = "GETPARAM(" + str(grasp_index) + ", 3)\n"
-	elif command == "set_all_param":
-		grasp_index = 96 + grasp_config_no
-		grasping_force_hex = hex(grasping_force)[2:]
-		opening_position = round(opening_position, 2)
-		opening_pos = int(opening_position*100)
-		opening_pos_hex = hex(opening_pos)[2:]
-		opening_pos_hex_byte0 = opening_pos_hex[:-2]
-		if not opening_pos_hex_byte0:
-			opening_pos_hex_byte0 = hex(0)[:-2]
-		opening_pos_hex_byte1 = opening_pos_hex[-2:]
-		closing_position = round(closing_position, 2)
-		closing_pos = int(closing_position * 100)
-		closing_pos_hex = hex(closing_pos)[2:]
-		closing_pos_hex_byte0 = closing_pos_hex[:-2]
-		if not closing_pos_hex_byte0:
-			closing_pos_hex_byte0 = hex(0)[:-2]
-		closing_pos_hex_byte1 = closing_pos_hex[-2:]
-		send_cmd = "SETPARAM(" + str(grasp_index) + ", 0, [" + closing_pos_hex_byte0[0:2] + "," + closing_pos_hex_byte1[0:2] + "," + opening_pos_hex_byte0[0:2] + "," + opening_pos_hex_byte1[0:2] + "," + grasping_force_hex + "])\n"
 	elif command == "set_grasping_force":
 		grasp_index = 96 + grasp_config_no
 		grasping_force_hex = hex(grasping_force)[2:]
@@ -113,6 +83,10 @@ class SerialPortComm(threading.Thread):
 		self.driver_shutdown = False
 		self.open_serial_port(serial_port, serial_timeout)
 		self.initialize_gripper()
+
+		self.changing_settings = threading.Lock() # only one setting at a time
+		self.setting_changed_successfully = False
+		self.setting_changed = threading.Condition()
 
 		threading.Thread.__init__(self)
 
@@ -195,6 +169,23 @@ class SerialPortComm(threading.Thread):
 		with self.serial_write_sync:
 			self.send_command(command, grasping_force, opening_position, closing_position)
 
+	def change_setting(self, command, grasping_force = 100, opening_position = 29.50, closing_position = 0.5):
+		with self.changing_settings: # only change one setting at a time
+			with self.setting_changed:
+				self.setting_changed_successfully = False
+				self.send_command_synced(command, grasping_force = 100, opening_position = 29.50, closing_position = 0.5)
+				self.setting_changed.wait(3.0)
+				return self.setting_changed_successfully
+
+	def set_force(self, grasping_force = 100):
+		return self.change_setting("set_grasping_force", grasping_force = grasping_force)
+
+	def set_opening_pos(self, opening_position = 29.50):
+		return self.change_setting("set_opening_position", opening_position = opening_position)
+
+	def set_closing_pos(self, closing_position = 0.5):
+		return self.change_setting("set_closing_position", closing_position = closing_position)
+
 	def add_flags_observer(self, observer):
 		self.flags_observers.append(observer)
 
@@ -210,82 +201,11 @@ class SerialPortComm(threading.Thread):
 		rospy.logdebug("MAINT_FLAG = %s", self.current_flags_dict["MAINT_FLAG"])
 
 	def ack_set_param(self, read_data_hexstr):
-		set_param_cond_var.acquire()
 		read_data = read_data_hexstr[0:12]
 		if read_data == "FIN SETPARAM":
-			global grasp_config
-			grasp_config_no_hex = read_data_hexstr[13:15]
-			grasp_config_no = int(grasp_config_no_hex, 16)
-			grasp_config_no = grasp_config_no - 150
-			grasp_config["grasp_config_no"] = grasp_config_no
-			grasp_config["fresh"] = True
-			set_param_cond_var.notify()
-		set_param_cond_var.release()
-
-	def extract_get_all_param(self, read_data_hexstr):
-		get_all_param_cond_var.acquire()
-		grasp_config_no_hex = read_data_hexstr[9:11]
-		grasp_config_no = int(grasp_config_no_hex, 16)
-		grasp_config_no = grasp_config_no - 150
-
-		closing_position_hexstr = read_data_hexstr[17:19] + read_data_hexstr[20:22] #remove the comma "," bewteen bytes
-		closing_position = int(closing_position_hexstr, 16) / float(100) #closing position in mm
-
-		opening_position_hexstr = read_data_hexstr[23:25] + read_data_hexstr[26:28] #remove the comma "," bewteen bytes
-		opening_position = int(opening_position_hexstr, 16) / float(100) #opening position in mm
-
-		grasping_force_hex = read_data_hexstr[29:31]
-		grasping_force = int(grasping_force_hex, 16)
-
-		global grasp_config
-		grasp_config["grasp_config_no"] = grasp_config_no
-		grasp_config["grasping_force"] = grasping_force
-		grasp_config["closing_position"] = closing_position
-		grasp_config["opening_position"] = opening_position
-		grasp_config["fresh"] = True
-		get_all_param_cond_var.notify()
-		get_all_param_cond_var.release()
-
-	def extract_opening_closing_position(self, read_data_hexstr):
-		get_single_param_cond_var.acquire()
-		grasp_config_no_hex = read_data_hexstr[9:11]
-		grasp_config_no = int(grasp_config_no_hex, 16)
-		grasp_config_no = grasp_config_no - 150
-
-		position_type_hex = read_data_hexstr[13] # "1" if it's the closing position, "2" if it's the opening position
-		position_type = int(position_type_hex, 16)
-
-		global grasp_config
-		grasp_config["grasp_config_no"] = grasp_config_no
-		if position_type == 1: # the closing position
-			closing_position_hexstr = read_data_hexstr[17:19] + read_data_hexstr[20:22] #remove the comma "," bewteen bytes
-			closing_position = int(closing_position_hexstr, 16) / float(100) #closing position in mm
-			grasp_config["closing_position"] = closing_position
-		elif position_type == 2: # the opening position
-			opening_position_hexstr = read_data_hexstr[17:19] + read_data_hexstr[20:22] #remove the comma "," bewteen bytes
-			opening_position = int(opening_position_hexstr, 16) / float(100) #opening position in mm
-			grasp_config["opening_position"] = opening_position
-
-		grasp_config["fresh"] = True
-		get_single_param_cond_var.notify()
-		get_single_param_cond_var.release()
-
-	def extract_grasping_force(self, read_data_hexstr):
-		get_single_param_cond_var.acquire()
-		grasp_config_no_hex = read_data_hexstr[9:11]
-		grasp_config_no = int(grasp_config_no_hex, 16)
-		grasp_config_no = grasp_config_no - 150
-
-		grasping_force_hexstr = read_data_hexstr[17:19]
-		grasping_force = int(grasping_force_hexstr, 16)
-
-		global grasp_config
-		grasp_config["grasp_config_no"] = grasp_config_no
-		grasp_config["grasping_force"] = grasping_force
-
-		grasp_config["fresh"] = True
-		get_single_param_cond_var.notify()
-		get_single_param_cond_var.release()
+			with self.setting_changed:
+				self.setting_changed_successfully = True
+				self.setting_changed.notify()
 
 
 	def extract_flags(self, read_data_hexstr):
@@ -340,12 +260,6 @@ class SerialPortComm(threading.Thread):
 		for msg in incoming_msgs:
 			if len(msg) == self.flags_msg_length:
 				self.extract_flags(msg)
-			elif len(msg) == self.get_all_param_msg_length:
-				self.extract_get_all_param(msg)
-			elif len(msg) == self.get_positions_param_msg_length:
-				self.extract_opening_closing_position(msg)
-			elif len(msg) == self.get_grasping_force_param_msg_length:
-				self.extract_grasping_force(msg)
 			elif len(msg) == self.set_single_param_msg_length:
 				self.ack_set_param(msg)
 

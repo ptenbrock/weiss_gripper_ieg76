@@ -17,72 +17,98 @@ from transitions.extensions import LockedHierarchicalMachine as Machine
 class DriverLogic(object):
 	states = [
 		'not_initialized', 'fault', 'other_fault',
-		'inactive', 'open', 'closed', 'holding',
-		{ 'name': 'referencing', 'on_enter': 'exec_referencing', 'on_exit': 'operation_finished'},
-		{ 'name': 'opening', 'on_exit': 'operation_finished',
-		  'children':[{'name': 'preclosing', 'on_enter': 'exec_preclosing'},
-		  			  {'name': 'opening', 'on_enter': 'exec_opening'}]},
-		{ 'name': 'closing', 'on_exit': 'operation_finished',
-		  'children':[{'name': 'preopening', 'on_enter': 'exec_preopening'},
-		  			  {'name': 'closing', 'on_enter': 'exec_closing'}]},
-		{ 'name': 'grasping', 'on_exit': 'operation_finished',
-		  'children':[{'name': 'preopening', 'on_enter': 'exec_preopening'},
-		  			  {'name': 'grasping', 'on_enter': 'exec_grasping'}]}
+
+		{'name': 'st', 'children':[
+		  'inactive', 'open', 'closed', 'holding']
+		},
+
+		{'name': 'op', 'on_exit': 'operation_finished', 'children':[
+			{'name': 'referencing', 'on_enter': 'exec_referencing'},
+			{'name': 'closing_before_opening', 'on_enter': 'exec_closing_before_opening'},
+	  		{'name': 'opening', 'on_enter': 'exec_opening'},
+			{'name': 'opening_before_close', 'on_enter': 'exec_opening_before_closing'},
+	  		{'name': 'closing', 'on_enter': 'exec_closing'},
+			{'name': 'opening_before_grasp', 'on_enter': 'exec_opening_before_closing'},
+	  		{'name': 'grasping', 'on_enter': 'exec_grasping'}
+		}
 	]
 
 	transitions = [
 		# uninitialized, fault and other_fault state
-		['on_inactive', ['not_initialized', 'fault', 'other_fault'], 'inactive'],
-		['on_open', ['not_initialized', 'fault', 'other_fault'], 'open'],
-		['on_closed', ['not_initialized', 'fault', 'other_fault'], 'closed'],
-		['on_holding', ['not_initialized', 'fault', 'other_fault'], 'holding'],
+		['on_inactive', ['not_initialized', 'fault', 'other_fault'], 'st_inactive'],
+		['on_open', ['not_initialized', 'fault', 'other_fault'], 'st_open'],
+		['on_closed', ['not_initialized', 'fault', 'other_fault'], 'st_closed'],
+		['on_holding', ['not_initialized', 'fault', 'other_fault'], 'st_holding'],
+		['on_fault', ['not_initialized', 'other_fault'], 'fault'],
+		['on_other_fault', ['not_initialized', 'fault'], 'other_fault'],
+		['on_not_initialized', ['fault', 'other_fault'], 'not_initialized'],
+		['do_reference', 'not_initialized', 'op_referencing'],
 
 		# inactive state
-		{ 'trigger': 'do_open', 'source': 'inactive', 'dest': 'opening', 'before': 'exec_activate'},
-		{ 'trigger': 'do_close', 'source': 'inactive', 'dest': 'closing', 'before': 'exec_activate'},
-		{ 'trigger': 'do_grasp', 'source': 'inactive', 'dest': 'grasping', 'before': 'exec_activate'},
+		['do_open', 'st_inactive', 'op_opening'],
+		['do_close', 'st_inactive', 'op_closing'],
+		['do_grasp', 'st_inactive', 'op_grasping'],
 
 		# open state
-		['do_reference', 'open', 'referencing'],
-		['do_open', 'open', 'closing_before_opening'],
-		['do_close', 'open', 'closing'],
-		['do_grasp', 'open', 'grasping'],
+		['do_reference', 'st_open', 'op_referencing'],
+		['do_open', 'st_open', 'op_closing_before_opening'],
+		['do_close', 'st_open', 'op_closing'],
+		['do_grasp', 'st_open', 'op_grasping'],
 
 		# closed state
-		['do_reference', 'closed', 'referencing'],
-		['do_open', 'closed', 'opening'],
-		['do_close', 'closed', 'opening_before_closing'],
-		['do_grasp', 'closed', 'grasping'],
+		['do_reference', 'st_closed', 'op_referencing'],
+		['do_open', 'st_closed', 'op_opening'],
+		['do_close', 'st_closed', 'op_opening_before_close'],
+		['do_grasp', 'st_closed', 'op_opening_before_grasp'],
 
 		# holding state
-		['do_reference', 'holding', 'referencing'],
-		{ 'trigger': 'do_open', 'source': 'holding', 'dest': 'opening', 'conditions': 'can_move_while_holding'},
-		{ 'trigger': 'do_close', 'source': 'holding', 'dest': 'opening_before_closing', 'conditions': 'can_move_while_holding'},
+		['do_reference', 'st_holding', 'op_referencing'],
+		{ 'trigger': 'do_open', 'source': 'st_holding', 'dest': 'op_opening', 'conditions': 'can_move_while_holding'},
+		{ 'trigger': 'do_close', 'source': 'st_holding', 'dest': 'op_opening_before_close', 'conditions': 'can_move_while_holding'},
 
 		# referencing state
-		['on_open', 'opening', 'open'],
+		{ 'trigger': 'on_inactive', 'source': 'op_referencing', 'dest': 'st_inactive', 'before': 'operation_successful'},
 
 		# opening state
-		['on_open', 'opening', 'open'],
+		{ 'trigger': 'on_open', 'source': 'op_opening', 'dest': 'st_open', 'before': 'operation_successful'},
+		{ 'trigger': 'on_holding', 'source': 'op_opening', 'dest': 'st_holding', 'before': 'claws_blocked'}, # opening failed because blocked by object
 
 		# closing state
-		['on_open', 'opening', 'open'],
+		{ 'trigger': 'on_closed', 'source': 'op_closing', 'dest': 'st_closed', 'before': 'operation_successful'},
+		{ 'trigger': 'on_holding', 'source': 'op_closing', 'dest': 'st_holding', 'before': 'claws_blocked'}, # failed because blocked by object
 
 		# grasping state
-		['on_open', 'opening', 'open'],
+		{ 'trigger': 'on_holding', 'source': 'op_grasping', 'dest': 'st_holding', 'before': 'operation_successful'},
+		{ 'trigger': 'on_closed', 'source': 'op_grasping', 'dest': 'st_closed', 'before': 'no_object'}, # failed because no object to grasp
 
 		# closing_before_opening state
-		['on_closed', 'closing_before_opening', 'opening'],
+		['on_closed', 'op_closing_before_opening', 'op_opening'],
+		{ 'trigger': 'on_holding', 'source': 'op_closing_before_opening', 'dest': 'st_holding', 'before': 'claws_blocked'}, # failed because blocked by object
 
 		# opening_before_closing state
-		['on_open', 'opening_before_closing', 'closing'],
+		['on_open', 'op_opening_before_close', 'op_closing'],
+		{ 'trigger': 'on_holding', 'source': 'op_opening_before_close', 'dest': 'st_holding', 'before': 'claws_blocked'}, # failed because blocked by object
+
+		['on_open', 'op_opening_before_grasp', 'op_grasping'],
+
+		# default transitions for unexpected state changes
+		{ 'trigger': 'on_inactive', 'source': '*', 'dest': 'st_inactive', 'before': 'unexpected_state_change'},
+		{ 'trigger': 'on_open', 'source': '*', 'dest': 'st_open', 'before': 'unexpected_state_change'},
+		{ 'trigger': 'on_closed', 'source': '*', 'dest': 'st_closed', 'before': 'unexpected_state_change'},
+		{ 'trigger': 'on_holding', 'source': '*', 'dest': 'st_holding', 'before': 'unexpected_state_change'},
+		{ 'trigger': 'on_fault', 'source': '*', 'dest': 'fault', 'before': 'unexpected_state_change'},
+		{ 'trigger': 'on_other_fault', 'source': '*', 'dest': 'other_fault', 'before': 'unexpected_state_change'},
+		{ 'trigger': 'on_not_initialized', 'source': '*', 'dest': 'not_initialized', 'before': 'unexpected_state_change'}
 	]
 
 	def __init__(self, serial_port_comm):
-		self.machine = Machine(model=self, states=DriverModel.states, initial='not_initialized')
+		self.machine = Machine(model=self, states=DriverLogic.states, transitions=DriverLogic.transitions, initial='not_initialized')
 		self.serial_port_comm = serial_port_comm
 		serial_port_comm.add_flags_observer(self)
 		self.gripper_pos = None
+
+		self.opening_pos = 29.5 # default gripper values
+		self.closing_pos = 0.5
 
 		self.service_sync = threading.Lock()
 		self.operation_params = None
@@ -99,21 +125,24 @@ class DriverLogic(object):
 			self.no_spurious_wakeup = False
 			self.operation_params = params
 			self.operation_response = trigger_response
-			with self.async_operation_finished: # needed if result of service known at later stage
+			with self.async_operation_finished: # needed if result of service only known at later stage
 				try:
 					trigger_response.success = False # only successful if explicitly set
 					self.trigger(transition)
-					while not self.no_spurious_wakeup:
+					while not self.no_spurious_wakeup: # make sure, the wait finishes correctly
 						self.async_operation_finished.wait() # needed if result of service known at later stage
 				except transitions.core.MachineError as err: # not a valid action in the current state
 					trigger_response.success = False
-					trigger_response.message = str(err) + trigger_response.message
+					if self.state in operation_err_msg_from_state:
+						trigger_response.message = self.get_err_msg(self.state) + trigger_response.message
+					else:
+						trigger_response.message = "Operation not allowed from current state ({}). ".format(self.state) + trigger_response.message
 					return
 				finally:
 					if trigger_response.success:
-						trigger_response.message = "Succeeded. " + trigger_response.message
+						trigger_response.message = "succeeded. " + trigger_response.message
 					else:
-						trigger_response.message = "Failed. " + trigger_response.message + " Current state: " + self.state
+						trigger_response.message = "failed. " + trigger_response.message + " Current state: " + self.state
 					self.operation_params = None
 					self.operation_response = None
 
@@ -125,8 +154,34 @@ class DriverLogic(object):
 	def operation_successful(self):
 		self.operation_response.success = True
 
+	def claws_blocked(self):
+		self.operation_response.success = False
+		self.operation_response.message += 'Claws are blocked.'
+
+	def no_object(self):
+		self.operation_response.success = False
+		self.operation_response.message += 'No object to grasp.'
+
+	def unexpected_state_change(self):
+		if self.operation_response is not None:
+			self.operation_response.success = False
+			self.operation_response.message += 'Unexpected state change.'
+		rospy.logerr('Unexpected state change.')
+
+	def get_err_msg(self, state):
+		operation_err_msg_from_state = {'not_initialized': 'Reference the gripper before usage. ',
+										'fault': 'Fault state. Ack the error before proceeding. ',
+										'other_fault': 'Temperature error or maintenance required. No operation possible. '}
+
+		return operation_err_msg_from_state[state]
+
 	def update_flags(self, new_flags_dict):
 		self.gripper_pos = new_flags_dict["POS"]
+
+		# the observer function should be non-blocking
+		# -> make sure the state machine is not blocked by a service call
+		if not self.state_machine_context.acquire(blocking=False):
+			return
 
 		if new_flags_dict["TEMPFAULT_FLAG"] == 1 or new_flags_dict["MAINT_FLAG"]: #or new_flags_dict["TEMPWARN_FLAG"]:
 			if not self.old_flag_signaled["OTHER_FAULT_SIGNALED"]:
@@ -157,6 +212,8 @@ class DriverLogic(object):
 				self.on_not_initialized()
 				self.old_flag_signaled["NOT_INITIALIZED_SIGNALED"] = True
 
+		self.state_machine_context.release()
+
 	def check_if_referenced(self, flags_dict):
 		#when the gripper is not referenced all flags are 0
 		gripper_referenced = False
@@ -169,26 +226,52 @@ class DriverLogic(object):
 
 		return gripper_referenced
 
-	def can_move_while_holding(self, event):
-		pass
+	def can_move_while_holding(self):
+		outer_grip = self.opening_pos > self.closing_pos
+		if outer_grip and self.params.position >= self.gripper_pos:
+			return True # if currently outer grip -> only allow movement to outer side
+		elif not outer_grip and self.params.position <= self.gripper_pos:
+			return True # if currently inner grip -> only allow movement to inner side
+		else:
+			return False
 
-	def exec_activate(self, event):
-		pass
-
-	def exec_referencing(self, event):
+	def exec_referencing(self):
 		self.serial_port_comm.send_command_synced("reference")
 
-	def exec_opening(self, event):
-		pass
+	def set_positions(self, opening_pos, closing_pos):
+		pos_set = False
+		while not pos_set:
+			pos_set = self.serial_port_comm.set_opening_pos(opening_pos)
+			pos_set = pos_set and self.serial_port_comm.set_closing_pos(closing_pos)
+		self.opening_pos = opening_pos
+		self.closing_pos = closing_pos
 
-	def exec_closing(self, event):
-		pass
+	def exec_opening(self):
+		rospy.logdebug('Trying to set opening positions...')
+		self.set_positions(opening_pos=self.params.position, closing_pos=self.gripper_pos)
+		rospy.logdebug('Opening positions set.')
+		self.serial_port_comm.send_command_synced("open")
 
-	def exec_grasping(self, event):
-		pass
+	def exec_closing(self):
+		rospy.logdebug('Trying to set closing positions...')
+		self.set_positions(opening_pos=self.gripper_pos, closing_pos=self.params.position)
+		rospy.logdebug('Closing positions set.')
+		self.serial_port_comm.send_command_synced("close")
 
-	def exec_preopening(self, event):
-		pass
+	def exec_grasping(self):
+		rospy.logdebug('Trying to set grasping positions...')
+		self.set_positions(opening_pos=self.gripper_pos, closing_pos=self.params.position)
+		rospy.logdebug('Grasping positions set.')
+		self.serial_port_comm.send_command_synced("close")
 
-	def exec_preclosing(self, event):
-		pass
+	def exec_opening_before_closing(self):
+		rospy.logdebug('Trying to set opening_before_closing positions...')
+		self.set_positions(opening_pos=self.params.position, closing_pos=self.params.position)
+		rospy.logdebug('Prepening positions set.')
+		self.serial_port_comm.send_command_synced("open")
+
+	def exec_closing_before_opening(self):
+		rospy.logdebug('Trying to set closing_before_opening positions...')
+		self.set_positions(opening_pos=self.params.position, closing_pos=self.params.position)
+		rospy.logdebug('Closing_before_opening positions set.')
+		self.serial_port_comm.send_command_synced("close")
