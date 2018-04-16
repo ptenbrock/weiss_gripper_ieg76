@@ -180,6 +180,10 @@ class DriverLogic(object):
 			return "Operation not allowed from current state ({}). ".format(state)
 
 	def update_flags(self, new_flags_dict):
+			thr = threading.Thread(target=self.update_flags_thread, args=(new_flags_dict,))
+			thr.start()
+
+	def update_flags_thread(self, new_flags_dict):
 		self.gripper_pos = new_flags_dict["POS"]
 
 		# the observer function should be non-blocking
