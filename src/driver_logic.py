@@ -103,7 +103,10 @@ class DriverLogic(object):
 	]
 
 	def __init__(self, serial_port_comm):
-		self.machine = Machine(model=self, states=DriverLogic.states, transitions=DriverLogic.transitions, initial='not_initialized')
+		self.state_machine_context = threading.RLock()
+
+		self.machine = Machine(model=self, states=DriverLogic.states, transitions=DriverLogic.transitions,
+							   initial='not_initialized', machine_context=[self.state_machine_context])
 		self.serial_port_comm = serial_port_comm
 		serial_port_comm.add_flags_observer(self)
 		self.gripper_pos = None
