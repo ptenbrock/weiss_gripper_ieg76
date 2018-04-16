@@ -1,4 +1,4 @@
-<#!/usr/bin/env python
+#!/usr/bin/env python
 import rospy
 from std_srvs.srv import Trigger, TriggerResponse
 from weiss_gripper_ieg76.srv import Move, MoveResponse, SetForce, SetForceResponse
@@ -9,7 +9,6 @@ from state_publisher import StatesPublisher
 
 class Driver(object):
 	def __init__(self):
-		rospy.on_shutdown(self.shutdown_handler)
 		serial_port_addr = rospy.get_param("~serial_port_address", '/dev/ttyACM0')
 		self.serial_port_comm = SerialPortComm(serial_port_addr, serial_timeout=0)
 
@@ -23,6 +22,7 @@ class Driver(object):
 		serv_ref = rospy.Service('set_force', SetForce, self.handle_set_force)
 
 		self.states_publisher_thread = StatesPublisher(0.8, self.serial_port_comm)
+		rospy.on_shutdown(self.shutdown_handler)
 
 	def log_reply(self, reply):
 		if reply.success:
@@ -72,7 +72,6 @@ class Driver(object):
 
 	def shutdown_handler(self):
 		self.states_publisher_thread.shutdown()
-		self.driver_logic.shutdown()
 		self.serial_port_comm.shutdown()
 		rospy.loginfo("Gracefully shutting down the driver...")
 
@@ -91,7 +90,7 @@ class Driver(object):
 
 
 if __name__ == "__main__":
-	#rospy.init_node('driver_node', log_level=rospy.DEBUG)
+	# rospy.init_node('ieg_driver_node', log_level=rospy.DEBUG)
 	rospy.init_node('ieg_driver_node')
 
 	driver = Driver()

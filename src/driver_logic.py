@@ -2,8 +2,8 @@
 # import roslib
 # import struct
 # import time
-import serial
-# import rospy
+# import serial
+import rospy
 import threading
 # import diagnostic_updater
 # from serial import SerialException
@@ -11,6 +11,7 @@ import threading
 # from weiss_gripper_ieg76.srv import *
 # from sensor_msgs.msg import JointState
 # from diagnostic_msgs.msg import DiagnosticStatus
+import transitions
 from transitions.extensions import LockedHierarchicalMachine as Machine
 
 
@@ -29,7 +30,7 @@ class DriverLogic(object):
 			{'name': 'opening_before_close', 'on_enter': 'exec_opening_before_closing'},
 	  		{'name': 'closing', 'on_enter': 'exec_closing'},
 			{'name': 'opening_before_grasp', 'on_enter': 'exec_opening_before_closing'},
-	  		{'name': 'grasping', 'on_enter': 'exec_grasping'}
+	  		{'name': 'grasping', 'on_enter': 'exec_grasping'} ]
 		}
 	]
 
@@ -133,10 +134,7 @@ class DriverLogic(object):
 						self.async_operation_finished.wait() # needed if result of service known at later stage
 				except transitions.core.MachineError as err: # not a valid action in the current state
 					trigger_response.success = False
-					if self.state in operation_err_msg_from_state:
-						trigger_response.message = self.get_err_msg(self.state) + trigger_response.message
-					else:
-						trigger_response.message = "Operation not allowed from current state ({}). ".format(self.state) + trigger_response.message
+					trigger_response.message = self.get_err_msg(self.state) + trigger_response.message
 					return
 				finally:
 					if trigger_response.success:
@@ -173,7 +171,10 @@ class DriverLogic(object):
 										'fault': 'Fault state. Ack the error before proceeding. ',
 										'other_fault': 'Temperature error or maintenance required. No operation possible. '}
 
-		return operation_err_msg_from_state[state]
+		if state in operation_err_msg_from_state:
+			return operation_err_msg_from_state[state]
+		else:
+			return "Operation not allowed from current state ({}). ".format(state)
 
 	def update_flags(self, new_flags_dict):
 		self.gripper_pos = new_flags_dict["POS"]
@@ -185,34 +186,45 @@ class DriverLogic(object):
 
 		if new_flags_dict["TEMPFAULT_FLAG"] == 1 or new_flags_dict["MAINT_FLAG"]: #or new_flags_dict["TEMPWARN_FLAG"]:
 			if not self.old_flag_signaled["OTHER_FAULT_SIGNALED"]:
+				self.set_signaled_flag("OTHER_FAULT_SIGNALED")
 				self.to_other_fault()
-				self.old_flag_signaled["OTHER_FAULT_SIGNALED"] = True
 		elif new_flags_dict["FAULT_FLAG"] == 1:
 			if not self.old_flag_signaled["FAULT_SIGNALED"]:
+				self.set_signaled_flag("FAULT_SIGNALED")
 				self.to_fault()
-				self.old_flag_signaled["FAULT_SIGNALED"] = True
 		elif new_flags_dict["IDLE_FLAG"] == 1:
 			if not self.old_flag_signaled["IDLE_SIGNALED"]:
+				self.set_signaled_flag("IDLE_SIGNALED")
 				self.on_inactive()
-				self.old_flag_signaled["IDLE_SIGNALED"] = True
 		elif new_flags_dict["OPEN_FLAG"] == 1:
 			if not self.old_flag_signaled["OPEN_SIGNALED"]:
+				self.set_signaled_flag("OPEN_SIGNALED")
 				self.on_open()
-				self.old_flag_signaled["OPEN_SIGNALED"] = True
 		elif new_flags_dict["CLOSED_FLAG"] == 1:
 			if not self.old_flag_signaled["CLOSED_SIGNALED"]:
+				self.set_signaled_flag("CLOSED_SIGNALED")
 				self.on_closed()
-				self.old_flag_signaled["CLOSED_SIGNALED"] = True
 		elif new_flags_dict["HOLDING_FLAG"] == 1:
 			if not self.old_flag_signaled["HOLDING_SIGNALED"]:
+				self.set_signaled_flag("HOLDING_SIGNALED")
 				self.on_holding()
-				self.old_flag_signaled["HOLDING_SIGNALED"] = True
 		elif not self.check_if_referenced(new_flags_dict):
 			if not self.old_flag_signaled["NOT_INITIALIZED_SIGNALED"]:
+				self.set_signaled_flag("NOT_INITIALIZED_SIGNALED")
 				self.on_not_initialized()
-				self.old_flag_signaled["NOT_INITIALIZED_SIGNALED"] = True
 
 		self.state_machine_context.release()
+
+	def set_signaled_flag(self, flag):
+		rospy.loginfo("signaled flag: {}".format(flag))
+		self.old_flag_signaled["OTHER_FAULT_SIGNALED"] = False
+		self.old_flag_signaled["FAULT_SIGNALED"] = False
+		self.old_flag_signaled["IDLE_SIGNALED"] = False
+		self.old_flag_signaled["OPEN_SIGNALED"] = False
+		self.old_flag_signaled["CLOSED_SIGNALED"] = False
+		self.old_flag_signaled["HOLDING_SIGNALED"] = False
+		self.old_flag_signaled["NOT_INITIALIZED_SIGNALED"] = False
+		self.old_flag_signaled[flag] = True
 
 	def check_if_referenced(self, flags_dict):
 		#when the gripper is not referenced all flags are 0
@@ -228,14 +240,15 @@ class DriverLogic(object):
 
 	def can_move_while_holding(self):
 		outer_grip = self.opening_pos > self.closing_pos
-		if outer_grip and self.params.position >= self.gripper_pos:
+		if outer_grip and self.operation_params.position > self.gripper_pos:
 			return True # if currently outer grip -> only allow movement to outer side
-		elif not outer_grip and self.params.position <= self.gripper_pos:
+		elif not outer_grip and self.operation_params.position < self.gripper_pos:
 			return True # if currently inner grip -> only allow movement to inner side
 		else:
 			return False
 
 	def exec_referencing(self):
+		rospy.loginfo('State: {}'.format(self.state))
 		self.serial_port_comm.send_command_synced("reference")
 
 	def set_positions(self, opening_pos, closing_pos):
@@ -245,33 +258,39 @@ class DriverLogic(object):
 			pos_set = pos_set and self.serial_port_comm.set_closing_pos(closing_pos)
 		self.opening_pos = opening_pos
 		self.closing_pos = closing_pos
+		rospy.loginfo("Opening pos: {}, closing pos: {}".format(opening_pos, closing_pos))
 
 	def exec_opening(self):
-		rospy.logdebug('Trying to set opening positions...')
-		self.set_positions(opening_pos=self.params.position, closing_pos=self.gripper_pos)
-		rospy.logdebug('Opening positions set.')
+		rospy.loginfo('Trying to set opening positions...')
+		rospy.loginfo('State: {}'.format(self.state))
+		self.set_positions(opening_pos=self.operation_params.position, closing_pos=self.gripper_pos)
+		rospy.loginfo('Opening positions set.')
 		self.serial_port_comm.send_command_synced("open")
 
 	def exec_closing(self):
-		rospy.logdebug('Trying to set closing positions...')
-		self.set_positions(opening_pos=self.gripper_pos, closing_pos=self.params.position)
-		rospy.logdebug('Closing positions set.')
+		rospy.loginfo('Trying to set closing positions...')
+		rospy.loginfo('State: {}'.format(self.state))
+		self.set_positions(opening_pos=self.gripper_pos, closing_pos=self.operation_params.position)
+		rospy.loginfo('Closing positions set.')
 		self.serial_port_comm.send_command_synced("close")
 
 	def exec_grasping(self):
-		rospy.logdebug('Trying to set grasping positions...')
-		self.set_positions(opening_pos=self.gripper_pos, closing_pos=self.params.position)
-		rospy.logdebug('Grasping positions set.')
+		rospy.loginfo('Trying to set grasping positions...')
+		rospy.loginfo('State: {}'.format(self.state))
+		self.set_positions(opening_pos=self.gripper_pos, closing_pos=self.operation_params.position)
+		rospy.loginfo('Grasping positions set.')
 		self.serial_port_comm.send_command_synced("close")
 
 	def exec_opening_before_closing(self):
-		rospy.logdebug('Trying to set opening_before_closing positions...')
-		self.set_positions(opening_pos=self.params.position, closing_pos=self.params.position)
-		rospy.logdebug('Prepening positions set.')
+		rospy.loginfo('Trying to set opening_before_closing positions...')
+		rospy.loginfo('State: {}'.format(self.state))
+		self.set_positions(opening_pos=self.gripper_pos, closing_pos=self.gripper_pos)
+		rospy.loginfo('Prepening positions set.')
 		self.serial_port_comm.send_command_synced("open")
 
 	def exec_closing_before_opening(self):
-		rospy.logdebug('Trying to set closing_before_opening positions...')
-		self.set_positions(opening_pos=self.params.position, closing_pos=self.params.position)
-		rospy.logdebug('Closing_before_opening positions set.')
+		rospy.loginfo('Trying to set closing_before_opening positions...')
+		rospy.loginfo('State: {}'.format(self.state))
+		self.set_positions(opening_pos=self.gripper_pos, closing_pos=self.gripper_pos)
+		rospy.loginfo('Closing_before_opening positions set.')
 		self.serial_port_comm.send_command_synced("close")

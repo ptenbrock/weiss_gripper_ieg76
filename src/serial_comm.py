@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # import roslib
-# import struct
-# import time
+import struct
+import time
 import serial
-# import rospy
+import rospy
 import threading
 # import diagnostic_updater
-# from serial import SerialException
+from serial import SerialException
 # from std_srvs.srv import Trigger, TriggerResponse
 # from weiss_gripper_ieg76.srv import *
 # from sensor_msgs.msg import JointState
@@ -14,6 +14,7 @@ import threading
 
 
 def create_send_payload(command, grasping_force = 100, opening_position = 29.50, closing_position = 0.5):
+	grasp_config_no = 0
 	grasp_index = "00"
 
 	if command == "open":
@@ -109,27 +110,27 @@ class SerialPortComm(threading.Thread):
 
 	def initialize_gripper(self):
 		rospy.loginfo("(Re)initializing...")
-		with self.serial_port_comm.serial_write_sync:
+		with self.serial_write_sync:
 			try:
 				rospy.logdebug("Query")
-				self.serial_port_comm.send_command("query")
+				self.send_command("query")
 				time.sleep(0.5)
-				self.serial_port_comm.send_command("query")
+				self.send_command("query")
 				time.sleep(0.5)
 				rospy.logdebug("Fallback")
-				self.serial_port_comm.send_command("fallback")
+				self.send_command("fallback")
 				time.sleep(0.5)
 				rospy.logdebug("Mode")
-				self.serial_port_comm.send_command("mode")
+				self.send_command("mode")
 				time.sleep(0.5)
 				rospy.logdebug("Restart")
-				self.serial_port_comm.send_command("restart")
+				self.send_command("restart")
 				time.sleep(0.5)
 				rospy.logdebug("Operate")
-				self.serial_port_comm.send_command("operate")
+				self.send_command("operate")
 				time.sleep(0.5)
 				rospy.logdebug("Reset flags")
-				self.serial_port_comm.send_command("reset")
+				self.send_command("reset")
 				time.sleep(0.5)
 				self.input_data_unavailable = 0
 				rospy.loginfo("Ready to receive requests.")
@@ -147,7 +148,7 @@ class SerialPortComm(threading.Thread):
 				rospy.logdebug("Fallback.")
 				self.send_command("fallback")
 				time.sleep(0.5)
-				if ser.isOpen():
+				if self.serial.isOpen():
 					rospy.logdebug("Close port.")
 					self.serial.close()
 			except SerialException as e:
@@ -173,7 +174,7 @@ class SerialPortComm(threading.Thread):
 		with self.changing_settings: # only change one setting at a time
 			with self.setting_changed:
 				self.setting_changed_successfully = False
-				self.send_command_synced(command, grasping_force = 100, opening_position = 29.50, closing_position = 0.5)
+				self.send_command_synced(command, grasping_force, opening_position, closing_position)
 				self.setting_changed.wait(3.0)
 				return self.setting_changed_successfully
 
@@ -189,7 +190,7 @@ class SerialPortComm(threading.Thread):
 	def add_flags_observer(self, observer):
 		self.flags_observers.append(observer)
 
-	def log_debug_flags():
+	def log_debug_flags(self):
 		rospy.logdebug("POS = %f", self.current_flags_dict["POS"])
 		rospy.logdebug("IDLE_FLAG = %s", self.current_flags_dict["IDLE_FLAG"])
 		rospy.logdebug("OPEN_FLAG = %s", self.current_flags_dict["OPEN_FLAG"])
@@ -211,33 +212,33 @@ class SerialPortComm(threading.Thread):
 	def extract_flags(self, read_data_hexstr):
 		#the data read from the serial port is @PDIN=[BYTE0,BYTE1,BYTE2,BYTE3] (see pag.20 in user manual)
 		position_hexstr = read_data_hexstr[7:9] + read_data_hexstr[10:12] #remove the comma "," bewteen "BYTE0" and "BYTE1"
-		current_flags_dict["POS"] = int(position_hexstr, 16) / float(100) #position in mm
+		self.current_flags_dict["POS"] = int(position_hexstr, 16) / float(100) #position in mm
 
 		byte3_hexstr = read_data_hexstr[16:18]
 		byte3_binary = int(byte3_hexstr, 16)
 		mask = 0b1
-		current_flags_dict["IDLE_FLAG"] = byte3_binary & mask
+		self.current_flags_dict["IDLE_FLAG"] = byte3_binary & mask
 
 		byte3_binary = byte3_binary >> 1
-		current_flags_dict["OPEN_FLAG"] = byte3_binary & mask
+		self.current_flags_dict["OPEN_FLAG"] = byte3_binary & mask
 
 		byte3_binary = byte3_binary >> 1
-		current_flags_dict["CLOSED_FLAG"] = byte3_binary & mask
+		self.current_flags_dict["CLOSED_FLAG"] = byte3_binary & mask
 
 		byte3_binary = byte3_binary >> 1
-		current_flags_dict["HOLDING_FLAG"] = byte3_binary & mask
+		self.current_flags_dict["HOLDING_FLAG"] = byte3_binary & mask
 
 		byte3_binary = byte3_binary >> 1
-		current_flags_dict["FAULT_FLAG"] = byte3_binary & mask
+		self.current_flags_dict["FAULT_FLAG"] = byte3_binary & mask
 
 		byte3_binary = byte3_binary >> 1
-		current_flags_dict["TEMPFAULT_FLAG"] = byte3_binary & mask
+		self.current_flags_dict["TEMPFAULT_FLAG"] = byte3_binary & mask
 
 		byte3_binary = byte3_binary >> 1
-		current_flags_dict["TEMPWARN_FLAG"] = byte3_binary & mask
+		self.current_flags_dict["TEMPWARN_FLAG"] = byte3_binary & mask
 
 		byte3_binary = byte3_binary >> 1
-		current_flags_dict["MAINT_FLAG"] = byte3_binary & mask
+		self.current_flags_dict["MAINT_FLAG"] = byte3_binary & mask
 
 		for obs in self.flags_observers:
 			obs.update_flags(self.current_flags_dict)
@@ -270,24 +271,24 @@ class SerialPortComm(threading.Thread):
 		incoming_bytes_no = 0
 
 		#first incoming msg-block contains start-up msgs and should not be parsed
-		if (not shutdown_driver) and ser.isOpen():
+		if (not self.driver_shutdown) and self.serial.isOpen():
 			try:
-				incoming_bytes_no = ser.inWaiting()
+				incoming_bytes_no = self.serial.inWaiting()
 
 				if (incoming_bytes_no>0): #if incoming bytes are waiting to be read from the serial input buffer
-					input_data = ser.read(ser.inWaiting())
+					input_data = self.serial.read(self.serial.inWaiting())
 					data_str = input_data.decode('ascii') #read the bytes and convert from binary array to ASCII
 					rospy.logdebug("incoming_bytes_no = %d: %s", incoming_bytes_no, data_str)
 			except Exception as e:
 				rospy.logerr("SerialPortComm.run() - inside if statement: %s", e)
 
 		#parse the subsequent reads
-		while (not shutdown_driver) and ser.isOpen():
+		while (not self.driver_shutdown) and self.serial.isOpen():
 			try:
-				incoming_bytes_no = ser.inWaiting()
+				incoming_bytes_no = self.serial.inWaiting()
 				if (incoming_bytes_no>0): #if incoming bytes are waiting to be read from the serial input buffer
 					self.input_data_unavailable = 0
-					input_data = ser.read(ser.inWaiting())
+					input_data = self.serial.read(self.serial.inWaiting())
 					data_str = input_data.decode('ascii') #read the bytes and convert from binary array to ASCII
 					if (incoming_bytes_no <> 22):
 						rospy.logdebug("incoming_bytes_no = %d: %s", incoming_bytes_no, data_str)
