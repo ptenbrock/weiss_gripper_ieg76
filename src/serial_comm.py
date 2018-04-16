@@ -157,9 +157,9 @@ class SerialPortComm(threading.Thread):
 	def send_command(self, command, grasping_force = 100, opening_position = 29.50, closing_position = 0.5):
 		if not self.serial_write_sync.locked():
 			self.send_command_synced(command, grasping_force, opening_position, closing_position)
-		payload = self.create_send_payload(command, grasping_force, opening_position, closing_position)
+		payload = create_send_payload(command, grasping_force, opening_position, closing_position)
 
-		log_debug_flags()
+		self.log_debug_flags()
 		try:
 			self.serial.write(payload)
 			rospy.logdebug("Message sent to serial port")
