@@ -4,6 +4,7 @@
 # import time
 # import serial
 import rospy
+import numpy as np
 import threading
 # import diagnostic_updater
 # from serial import SerialException
@@ -48,19 +49,19 @@ class DriverLogic(object):
 		# inactive state
 		['do_open', 'st_inactive', 'op_opening'],
 		['do_close', 'st_inactive', 'op_closing'],
-		['do_grasp', 'st_inactive', 'op_grasping'],
+		{ 'trigger': 'do_grasp', 'source': 'st_inactive', 'dest': 'op_grasping', 'conditions': 'can_grasp'},
 
 		# open state
 		['do_reference', 'st_open', 'op_referencing'],
 		['do_open', 'st_open', 'op_closing_before_opening'],
 		['do_close', 'st_open', 'op_closing'],
-		['do_grasp', 'st_open', 'op_grasping'],
+		{ 'trigger': 'do_grasp', 'source': 'st_open', 'dest': 'op_grasping', 'conditions': 'can_grasp'},
 
 		# closed state
 		['do_reference', 'st_closed', 'op_referencing'],
 		['do_open', 'st_closed', 'op_opening'],
 		['do_close', 'st_closed', 'op_opening_before_close'],
-		['do_grasp', 'st_closed', 'op_opening_before_grasp'],
+		{ 'trigger': 'do_grasp', 'source': 'st_closed', 'dest': 'op_opening_before_grasp', 'conditions': 'can_grasp'},
 
 		# holding state
 		['do_reference', 'st_holding', 'op_referencing'],
@@ -132,18 +133,17 @@ class DriverLogic(object):
 			with self.async_operation_finished: # needed if result of service only known at later stage
 				try:
 					trigger_response.success = False # only successful if explicitly set
-					self.trigger(transition)
-					while not self.no_spurious_wakeup: # make sure, the wait finishes correctly
-						self.async_operation_finished.wait() # needed if result of service known at later stage
+					if self.trigger(transition):
+						while not self.no_spurious_wakeup: # make sure, the wait finishes correctly
+							self.async_operation_finished.wait() # needed if result of service known at later stage
 				except transitions.core.MachineError as err: # not a valid action in the current state
 					trigger_response.success = False
 					trigger_response.message = self.get_err_msg(self.state) + trigger_response.message
-					return
 				finally:
 					if trigger_response.success:
 						trigger_response.message = "succeeded. " + trigger_response.message
 					else:
-						trigger_response.message = "failed. " + trigger_response.message + " Current state: " + self.state
+						trigger_response.message = "failed. " + trigger_response.message
 					self.operation_params = None
 					self.operation_response = None
 
@@ -252,6 +252,17 @@ class DriverLogic(object):
 		elif not outer_grip and self.operation_params.position < self.gripper_pos:
 			return True # if currently inner grip -> only allow movement to inner side
 		else:
+			self.operation_response.success = False
+			self.operation_response.message += 'Moving into the grasped object is not possible. Move in the other direction. Current pos: {}, commanded pos: {}'.format(self.gripper_pos, self.operation_params.position)
+			return False
+
+	def can_grasp(self):
+		least_movement = 0.5 # margin found by trial-and-error
+		if np.abs(self.operation_params.position - self.gripper_pos) >= least_movement:
+			return True
+		else:
+			self.operation_response.success = False
+			self.operation_response.message += 'Grasping range too little. Move by at least {}mm.. Current pos: {}, commanded pos: {}'.format(least_movement, self.gripper_pos, self.operation_params.position)
 			return False
 
 	def exec_referencing(self):
