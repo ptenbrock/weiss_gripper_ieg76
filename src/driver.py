@@ -102,8 +102,8 @@ class Driver(object):
 		self.states_publisher_thread.start()
 		rospy.logdebug("Threads started.")
 
-		grasp_force = rospy.get_param("~grasp_force", 100)
-		rospy.loginfo('Set force to {}%.'.format(grasp_force))
+		grasp_force = rospy.get_param("~grasping_force", 100)
+		rospy.loginfo('Setting force to {}%...'.format(grasp_force))
 		while True:
 			if self.serial_port_comm.set_force(grasp_force):
 				break
@@ -122,8 +122,8 @@ class Driver(object):
 
 
 if __name__ == "__main__":
-	# rospy.init_node('ieg_driver_node', log_level=rospy.DEBUG)
-	rospy.init_node('ieg_driver_node')
+	# rospy.init_node('ieg_driver', log_level=rospy.DEBUG)
+	rospy.init_node('ieg_driver')
 
 	driver = Driver()
 	driver.run()

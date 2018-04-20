@@ -1,7 +1,0 @@
-uint8 grasp_config_no # the number of the grasping configuration to be used (0, 1, 2, 3)
-uint8 grasping_force # the grasping force in percentage (0..100)
-float32 opening_position # the opening position in mm (0.0..30.00)
-float32 closing_position # the closing position in mm (0.0..30.00)
----
-bool success   # indicate successful run of triggered service
-string message # informational, e.g. for error messages
