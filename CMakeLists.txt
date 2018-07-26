@@ -54,12 +54,14 @@ find_package(catkin REQUIRED COMPONENTS
 ## Generate services in the 'srv' folder
 add_service_files(
   FILES
-  ConfigTrigger.srv
-  GetAllParam.srv
-  SetAllParam.srv
-  SetClosingPos.srv
-  SetGraspingForce.srv
-  SetOpeningPos.srv
+  # ConfigTrigger.srv
+  # GetAllParam.srv
+  # SetAllParam.srv
+  # SetClosingPos.srv
+  # SetGraspingForce.srv
+  # SetOpeningPos.srv
+  Move.srv
+  SetForce.srv
 )
 
 ## Generate actions in the 'action' folder

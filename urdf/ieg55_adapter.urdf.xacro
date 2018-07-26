@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
-<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ieg76_adapter">
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ieg55_adapter">
 
-    <xacro:macro name="ieg76_adapter" params="parent prefix *origin">
+    <xacro:macro name="ieg55_adapter" params="parent prefix *origin">
 
         <!-- mount the adapter to the robot -->
         <joint name="${prefix}robotside_joint" type="fixed">
@@ -14,7 +14,7 @@
             <visual>
                 <origin xyz="0 0 0.005" rpy="0 0 0"/>
                 <geometry>
-                    <box size="0.076 0.06 0.01"/>
+                    <box size="0.055 0.041 0.01"/>
                 </geometry>
                 <material name="metal">
                   <color rgba="0.2 0.2 0.2 1.0"/>
@@ -23,7 +23,7 @@
             <collision>
                 <origin xyz="0 0 0.005" rpy="0 0 0"/>
                 <geometry>
-                    <box size="0.076 0.06 0.01"/>
+                    <box size="0.055 0.041 0.01"/>
                 </geometry>
             </collision>
         </link>
