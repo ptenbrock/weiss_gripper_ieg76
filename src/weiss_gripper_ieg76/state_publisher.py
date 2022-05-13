@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import rospy
 import threading
 import diagnostic_updater
@@ -59,7 +58,6 @@ class StatesPublisher(threading.Thread):
             stat.summary(DiagnosticStatus.ERROR, "The fault bit of the gripper is 1.")
         else:
             stat.summary(DiagnosticStatus.OK, "The fault bit of the gripper is 0.")
-        stat.add("Stroke (mm)", self.current_flags_dict["STROKE"])
         stat.add("Position", self.current_flags_dict["POS"])
         stat.add("Idle Flag", self.current_flags_dict["IDLE_FLAG"])
         stat.add("Open Flag", self.current_flags_dict["OPEN_FLAG"])

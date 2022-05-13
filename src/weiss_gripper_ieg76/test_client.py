@@ -168,29 +168,29 @@ if __name__ == "__main__":
 		elif selected_cmd == 2:
 			print("Sending open jaws request...")
 			send_open_request(grasp_config_no)
-		elif selected_cmd == 3: 
+		elif selected_cmd == 3:
 			print("Sending close jaws request...")
 			send_close_request(grasp_config_no)
-		elif selected_cmd == 4: 
+		elif selected_cmd == 4:
 			print("Sending grasp object request...")
 			send_grasp_object_request(grasp_config_no)
-		elif selected_cmd == 5: 
+		elif selected_cmd == 5:
 			print("Sending acknowledge error request...")
 			send_ack_error_request()
-		elif selected_cmd == 6: 
+		elif selected_cmd == 6:
 			print("Sending acknowledge error request...")
 			send_ack_ref_error_request()
-		elif selected_cmd == 7: 
+		elif selected_cmd == 7:
 			print("Current grasp configuration number: " + str(grasp_config_no))
 			input_data = eval(input("Enter new grasp configuration no = "))
 			if input_data >=0 and input_data <=3:
 				grasp_config_no = input_data
 			else:
 				print("Unknown grasp config no " + str(input_data) + " given. Valid grasp configuration numbers are 0, 1, 2, 3.")
-		elif selected_cmd == 8: 
+		elif selected_cmd == 8:
 			print("Getting all the parameters (grasping force, opening position, closing position) of grasp configuration number " + str(grasp_config_no) + "...")
 			get_all_param_request(grasp_config_no)
-		elif selected_cmd == 9: 
+		elif selected_cmd == 9:
 			print("Setting all the parameters (grasping force, opening position, closing position) of grasp configuration number " + str(grasp_config_no) + "...")
 			input_data_grasping_force = eval(input("Enter the grasping force (0..100%) of grasp config no " + str(grasp_config_no) + " = "))
 			input_data_opening_position = eval(input("Enter the opening position of grasp config no " + str(grasp_config_no) + " = "))
@@ -210,7 +210,7 @@ if __name__ == "__main__":
 				print("Setting the grasping force of grasp configuration number " + str(grasp_config_no) + "...")
 				set_grasping_force_request(grasp_config_no, input_data)
 			else:
-				print("Value error " + str(input_data) + ". Valid grasping force values are 0..100%.") 
+				print("Value error " + str(input_data) + ". Valid grasping force values are 0..100%.")
 		elif selected_cmd == 11:
 			input_data = eval(input("Enter the opening position of grasp config no " + str(grasp_config_no) + " = "))
 			if input_data >=0.0 and input_data <=30.0:
@@ -218,7 +218,7 @@ if __name__ == "__main__":
 				set_opening_pos_request(grasp_config_no, input_data)
 			else:
 				print("Value error " + str(input_data) + ". Valid opening position values are 0.0..30.0 mm.")
-		elif selected_cmd == 12: 
+		elif selected_cmd == 12:
 			input_data = eval(input("Enter the closing position of grasp config no " + str(grasp_config_no) + " = "))
 			if input_data >=0.0 and input_data <=30.0:
 				print("Setting the closing position of grasp configuration number " + str(grasp_config_no) + "...")

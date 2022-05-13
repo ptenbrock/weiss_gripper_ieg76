@@ -2,9 +2,9 @@
 import rospy
 from std_srvs.srv import Trigger, TriggerResponse
 from weiss_gripper_ieg76.srv import Move, MoveResponse, SetForce, SetForceResponse
-from serial_comm import SerialPortComm
-from driver_logic import DriverLogic
-from state_publisher import StatesPublisher
+from weiss_gripper_ieg76.serial_comm import SerialPortComm
+from weiss_gripper_ieg76.driver_logic import DriverLogic
+from weiss_gripper_ieg76.state_publisher import StatesPublisher
 
 
 class Driver(object):
