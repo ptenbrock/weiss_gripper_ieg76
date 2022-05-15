@@ -17,6 +17,19 @@ class Driver(object):
 		self.states_publisher_thread = StatesPublisher(0.8, self.serial_port_comm)
 		rospy.on_shutdown(self.shutdown_handler)
 
+	def set_max_pos(self, gripper_info):
+		product_id = gripper_info["product_id"]
+		if product_id == "CRG 200-085":
+			self._max_pos = 85
+		elif product_id == "CRG 30-050":
+			self._max_pos = 50
+		elif product_id == "IEG 76-030":
+			self._max_pos = 30
+		elif product_id == "IEG 55-020":
+			self._max_pos = 20
+		else:
+			raise RuntimeError("Gripper type '{}' not yet supported!".format(product_id))
+
 	def log_reply(self, reply):
 		if reply.success:
 			rospy.loginfo(reply.message)
@@ -24,7 +37,7 @@ class Driver(object):
 			rospy.logerr(reply.message)
 
 	def check_position(self, pos):
-		return 0 <= pos <= 30
+		return 0 <= pos <= self._max_pos
 
 	def check_force(self, force):
 		return 0 <= force <= 100
@@ -49,7 +62,7 @@ class Driver(object):
 		self.relative_to_absolute(req)
 		if not self.check_position(req.position):
 			reply.success = False
-			reply.message = 'Opening failed. Position must be 0.0(mm) <= position <= 30.0(mm).'
+			reply.message = 'Opening failed. Position must be 0.0(mm) <= position <= {}.0(mm).'.format(self._max_pos)
 		else:
 			self.driver_logic.service_called(transition="do_open", params=req, trigger_response=reply)
 			reply.message = 'Opening ' + reply.message
@@ -62,7 +75,7 @@ class Driver(object):
 		self.relative_to_absolute(req)
 		if not self.check_position(req.position):
 			reply.success = False
-			reply.message = 'Closing failed. Position must be 0.0(mm) <= position <= 30.0(mm).'
+			reply.message = 'Closing failed. Position must be 0.0(mm) <= position <= {}.0(mm).'.format(self._max_pos)
 		else:
 			self.driver_logic.service_called(transition="do_close", params=req, trigger_response=reply)
 			reply.message = 'Closing ' + reply.message
@@ -75,7 +88,7 @@ class Driver(object):
 		self.relative_to_absolute(req)
 		if not self.check_position(req.position):
 			reply.success = False
-			reply.message = 'Grasping failed. Position must be 0.0(mm) <= position <= 30.0(mm).'
+			reply.message = 'Grasping failed. Position must be 0.0(mm) <= position <= {}.0(mm).'.format(self._max_pos)
 		else:
 			self.driver_logic.service_called(transition="do_grasp", params=req, trigger_response=reply)
 			reply.message = 'Grasping ' + reply.message
@@ -134,6 +147,10 @@ class Driver(object):
 		if not serial_no is None and serial_no != int(self.serial_port_comm.gripper_info['serial_no']):
 			rospy.logerr('Serial no is {}, but requested is {}'.format(self.serial_port_comm.gripper_info['serial_no'], serial_no))
 			return
+
+		# update parameters based on gripper_info
+		self.set_max_pos(self.serial_port_comm.gripper_info)
+		self.states_publisher_thread.set_gripper_info(self.serial_port_comm.gripper_info)
 
 		grasp_force = rospy.get_param("~grasping_force", 100)
 		rospy.loginfo('Setting force to {}%...'.format(grasp_force))

@@ -19,10 +19,10 @@ class StatesPublisher(threading.Thread):
         self.joint_state_msg = JointState()
         self.joint_state_msg.name = []
         self.joint_state_msg.name.append("ur5_weiss_ieg76_jaw_position")  # TODO use parameter
-        self.joint_states_publisher = rospy.Publisher('joint_states', JointState, queue_size=10)
+        self.joint_states_publisher = rospy.Publisher('~joint_states', JointState, queue_size=10)
 
         self.updater = diagnostic_updater.Updater()
-        self.updater.setHardwareID("Weiss Robotics Gripper IEG 76-030 V1.02 SN 000106")
+        self.updater.setHardwareID("Weiss Robotics Gripper ??? SN ???")
         self.updater.add("Position and flags updater", self.produce_diagnostics)
         freq_bounds = {'min': 0.5, 'max': 2}
         # It publishes the messages and simultaneously makes diagnostics for the topic "joint_states" using a FrequencyStatus and TimeStampStatus
@@ -30,6 +30,9 @@ class StatesPublisher(threading.Thread):
                                                         self.updater,
                                                         diagnostic_updater.FrequencyStatusParam(freq_bounds, 0.1, 10),
                                                         diagnostic_updater.TimeStampStatusParam())
+
+    def set_gripper_info(self, gripper_info):
+        self.updater.setHardwareID("Weiss Robotics Gripper {} SN {}".format(gripper_info["product_id"], gripper_info["serial_no"]))
 
     def shutdown(self):
         self.driver_shutdown = True
@@ -73,7 +76,9 @@ class StatesPublisher(threading.Thread):
     def publish_states(self):
         self.joint_state_msg.header.stamp = rospy.Time.now()
         self.joint_state_msg.position = []
-        self.joint_state_msg.position.append(self.current_flags_dict["POS"])
+        MM_TO_M = 0.001
+        joint_state = self.current_flags_dict["POS"] * MM_TO_M / 2.0  # joint state is half the stroke ("POS")
+        self.joint_state_msg.position.append(joint_state)
         try:
             self.pub_freq_time_diag.publish(self.joint_state_msg)
         except:
