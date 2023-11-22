@@ -349,8 +349,10 @@ class SerialPortComm(threading.Thread):
 				else:
 					self.input_data_unavailable+=1
 					time.sleep(0.1)
-					if(self.input_data_unavailable>50):
+					if(self.input_data_unavailable>20):
 						rospy.logerr("No data received from the gripper. Unplug and replug the usb-cable.")
+					if(self.input_data_unavailable>50):
+						raise RuntimeError("Connection lost -> Reconnect")
 			except Exception as e:
 				rospy.logerr("SerialPortComm.run() - inside while statement: %s", e)
 				connection_errors_no += 1
